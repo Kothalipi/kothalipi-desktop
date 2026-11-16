@@ -523,3 +523,32 @@ pub fn stop_handy_keys_recording(app: AppHandle) -> Result<(), String> {
     super::resume_all_shortcuts(&app);
     result
 }
+
+#[cfg(test)]
+mod two_key_tests {
+    use super::validate_shortcut;
+
+    /// Bangla and English keys are set with the same recorder as every other
+    /// shortcut, so any of these shapes works for them.
+    #[test]
+    fn two_key_combos_are_accepted() {
+        for combo in [
+            "ctrl+b", // modifier + letter
+            "option+b",
+            "command_right+b", // a right-hand modifier + letter
+            "ctrl+shift",      // two modifiers, hold both
+            "ctrl_right+shift_right",
+            "alt+space",
+            "f9",            // a single key
+            "command_right", // a single modifier (the default)
+        ] {
+            assert!(validate_shortcut(combo).is_ok(), "{combo} should be valid");
+        }
+    }
+
+    #[test]
+    fn an_empty_shortcut_is_rejected() {
+        assert!(validate_shortcut("").is_err());
+        assert!(validate_shortcut("   ").is_err());
+    }
+}

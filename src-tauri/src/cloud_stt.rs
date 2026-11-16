@@ -66,6 +66,18 @@ pub struct EngineError {
     limit: Option<LimitInfo>,
 }
 
+impl EngineError {
+    pub fn kind(&self) -> FailureKind {
+        self.kind.clone()
+    }
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
+    pub fn limit(&self) -> Option<&LimitInfo> {
+        self.limit.as_ref()
+    }
+}
+
 impl From<(FailureKind, String)> for EngineError {
     fn from((kind, detail): (FailureKind, String)) -> Self {
         Self {
@@ -147,7 +159,7 @@ type EngineResult = Result<String, EngineError>;
 
 /// One client for the whole app, so a dictation reuses the connection (and its
 /// TLS handshake) that the last one, or the key press, already opened.
-fn client() -> Result<reqwest::Client, (FailureKind, String)> {
+pub(crate) fn client() -> Result<reqwest::Client, (FailureKind, String)> {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     if let Some(c) = CLIENT.get() {
         return Ok(c.clone());
@@ -275,7 +287,7 @@ pub fn parse_limit(provider: &CloudProvider, body: &str) -> LimitInfo {
     }
 }
 
-fn classify_response(
+pub(crate) fn classify_response(
     provider: &CloudProvider,
     status: reqwest::StatusCode,
     body: &str,
@@ -357,7 +369,7 @@ fn gemini_body(model: &str, audio: &Audio, language: Option<&str>) -> serde_json
     }
 }
 
-fn gemini_text(json: &serde_json::Value) -> Option<String> {
+pub(crate) fn gemini_text(json: &serde_json::Value) -> Option<String> {
     let parts = json.pointer("/candidates/0/content/parts")?.as_array()?;
     // The dedicated transcribe model answers with
     // `parts[].audioTranscription.text`; general Gemini models use `parts[].text`.

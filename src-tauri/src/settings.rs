@@ -570,6 +570,12 @@ pub struct AppSettings {
     /// default, so the app lives in the menu bar only.
     #[serde(default)]
     pub show_dock_icon: bool,
+    /// Kothalipi Smart Polish: Gemini cleans up the text after transcription.
+    #[serde(default)]
+    pub smart_polish: bool,
+    /// Gemini model used for it (empty = the default alias).
+    #[serde(default)]
+    pub smart_polish_model: String,
     #[serde(default = "default_paste_delay_ms")]
     pub paste_delay_ms: u64,
     #[serde(default = "default_paste_delay_after_ms")]
@@ -1148,6 +1154,8 @@ pub fn get_default_settings() -> AppSettings {
         keyboard_implementation: KeyboardImplementation::default(),
         show_tray_icon: default_show_tray_icon(),
         show_dock_icon: false,
+        smart_polish: false,
+        smart_polish_model: String::new(),
         paste_delay_ms: default_paste_delay_ms(),
         paste_delay_after_ms: default_paste_delay_after_ms(),
         reliable_paste: false,

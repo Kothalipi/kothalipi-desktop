@@ -28,6 +28,7 @@ mod memory;
 mod notices;
 mod overlay;
 mod paste_tx;
+mod polish;
 pub mod portable;
 #[cfg(target_os = "linux")]
 mod primary_selection;
@@ -801,6 +802,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::get_keyboard_implementation,
             shortcut::change_show_tray_icon_setting,
             shortcut::change_show_dock_icon_setting,
+            shortcut::change_smart_polish_setting,
             cloud_usage::get_cloud_usage,
             shortcut::change_transcribe_accelerator_setting,
             shortcut::change_transcribe_gpu_device,

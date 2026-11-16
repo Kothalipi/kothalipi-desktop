@@ -891,6 +891,10 @@ impl ShortcutAction for TranscribeAction {
                     // language can't change what this one uses (settings are
                     // read here, once).
                     let settings_snapshot = crate::language_hotkeys::session_settings(&ah);
+                    // Kothalipi Smart Polish reads the same snapshot, so it uses
+                    // this recording's language even if the next one has begun.
+                    let polish_snapshot = crate::polish::enabled(&settings_snapshot)
+                        .then(|| settings_snapshot.clone());
                     if crate::cloud_stt::cloud_ready(&settings_snapshot) {
                         guard.release_early();
                     }
@@ -963,15 +967,32 @@ impl ShortcutAction for TranscribeAction {
                                 utils::redact_text(&transcription)
                             );
 
-                            if post_process {
+                            if post_process || polish_snapshot.is_some() {
                                 if use_streaming_overlay {
                                     tm.emit_stream_working(StreamWorkKind::Polishing);
                                 } else {
                                     show_processing_overlay(&ah);
                                 }
                             }
-                            let Some(processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, &transcription, post_process),
+                            // Smart Polish first (it fixes the text), then any AI
+                            // post-processing prompt the user set up.
+                            let polished = match &polish_snapshot {
+                                Some(snapshot) => complete_unless_cancelled(
+                                    crate::polish::polish(
+                                        &ah,
+                                        snapshot,
+                                        &transcription,
+                                        Some(snapshot.selected_language.as_str()),
+                                    ),
+                                    || rm.was_cancelled_since(cancel_generation),
+                                )
+                                .await
+                                .flatten(),
+                                None => None,
+                            };
+                            let text_to_process = polished.as_deref().unwrap_or(&transcription);
+                            let Some(mut processed) = complete_unless_cancelled(
+                                process_transcription_output(&ah, text_to_process, post_process),
                                 || rm.was_cancelled_since(cancel_generation),
                             )
                             .await
@@ -980,6 +1001,10 @@ impl ShortcutAction for TranscribeAction {
                                 release_ui(&ah, session);
                                 return;
                             };
+                            // History keeps the raw text and shows the polished one beside it.
+                            if processed.post_processed_text.is_none() {
+                                processed.post_processed_text = polished;
+                            }
 
                             if rm.was_cancelled_since(cancel_generation) {
                                 debug!("Transcription operation cancelled before paste");

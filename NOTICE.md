@@ -12,6 +12,14 @@
   **[ggml](https://github.com/ggml-org/ggml)** for on-device speech recognition.
 - **[Tauri](https://tauri.app)**, React and the Rust ecosystem.
 
+## History
+
+This repository's Git history starts at Kothalipi 0.1.0 and lists release snapshots only. The
+code those releases grew from has its own full history, with every author's commits, at
+[github.com/cjpais/Handy](https://github.com/cjpais/Handy). Handy's contributors made the
+engine this app is built on, and we credit them here, in [LICENSE](LICENSE), in the app's About
+page and on the website.
+
 ## Models
 
 - Bangla: [SayedShaun/Qwen3-ASR-0.6B-Bengali](https://huggingface.co/SayedShaun/Qwen3-ASR-0.6B-Bengali)

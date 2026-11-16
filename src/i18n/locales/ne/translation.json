@@ -1050,6 +1050,11 @@
           "note": "Google and OpenAI don't share a key's remaining quota with apps. This is Kothalipi's own count; your provider's page shows the exact limit.",
           "openGemini": "Gemini usage and limits",
           "openOpenai": "OpenAI usage"
+        },
+        "polish": {
+          "label": "Smart Polish",
+          "description": "After typing, Gemini fixes Bangla spelling, adds । ? and commas, and removes filler sounds. It sends the text (never audio) to Google with your own key and adds about a second. Off by default.",
+          "needKey": "Needs a Google Gemini key. Add one under Cloud engines above, then turn this on."
         }
       }
     }

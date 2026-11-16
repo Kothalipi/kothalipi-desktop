@@ -147,6 +147,33 @@ const EngineRow: React.FC<{
   );
 };
 
+/** Smart Polish: Gemini fixes Bangla spelling and punctuation after transcription. */
+const SmartPolish: React.FC<{ hasGeminiKey: boolean }> = ({ hasGeminiKey }) => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
+  return (
+    <SettingContainer
+      title={t("settings.kothalipi.polish.label")}
+      description={t(
+        hasGeminiKey
+          ? "settings.kothalipi.polish.description"
+          : "settings.kothalipi.polish.needKey",
+      )}
+      descriptionMode="tooltip"
+      grouped={true}
+    >
+      <input
+        type="checkbox"
+        className="size-4 cursor-pointer accent-logo-primary"
+        aria-label={t("settings.kothalipi.polish.label")}
+        checked={getSetting("smart_polish") ?? false}
+        disabled={!hasGeminiKey || isUpdating("smart_polish")}
+        onChange={(e) => updateSetting("smart_polish", e.target.checked)}
+      />
+    </SettingContainer>
+  );
+};
+
 /** Kothalipi: offline or cloud, and the cloud engines in fallback order. */
 export const CloudSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -197,6 +224,7 @@ export const CloudSettings: React.FC = () => {
             }}
           />
         ))}
+      <SmartPolish hasGeminiKey={Boolean(keys.gemini)} />
       {mode === "cloud" && (
         <CloudUsagePanel providers={engines.map((e) => e.provider)} />
       )}
