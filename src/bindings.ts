@@ -467,6 +467,9 @@ async changeCloudApiKeySetting(provider: CloudProvider, apiKey: string) : Promis
 /**
  * Kothalipi: check a cloud key works, without saving it.
  */
+async getCloudUsage() : Promise<CloudUsage> {
+    return await TAURI_INVOKE("get_cloud_usage");
+},
 async checkCloudApiKey(provider: CloudProvider, apiKey: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("check_cloud_api_key", { provider, apiKey }) };
@@ -549,6 +552,14 @@ async changeKeyboardImplementationSetting(implementation: string) : Promise<Resu
  */
 async getKeyboardImplementation() : Promise<string> {
     return await TAURI_INVOKE("get_keyboard_implementation");
+},
+async changeShowDockIconSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_show_dock_icon_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 },
 async changeShowTrayIconSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
@@ -1214,7 +1225,7 @@ spoken_languages?: string[]; overlay_position?: OverlayPosition; debug_mode?: bo
  * Mac while recording, so its microphone does not return silence while
  * another Apple device is playing through it.
  */
-airpods_mode?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
+airpods_mode?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; show_dock_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -1308,6 +1319,9 @@ export type CloudEngine = { provider: CloudProvider; model: string; enabled: boo
  * Kothalipi: a cloud speech-to-text provider.
  */
 export type CloudProvider = "gemini" | "openai"
+export type CloudUsage = { day: string; providers: Partial<{ [key in string]: ProviderUsage }>; limits: Partial<{ [key in string]: LimitHit }> }
+export type LimitHit = { scope: string; limit: number | null; message: string; hit_at: number; retry_after_secs: number | null }
+export type ProviderUsage = { requests: number; ok: number; failed: number; audio_secs: number }
 export type CustomSounds = { start: boolean; stop: boolean }
 export type DeviceProfile = { os: string; arch: string; 
 /**

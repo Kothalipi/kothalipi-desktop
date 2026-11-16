@@ -14,6 +14,7 @@ import { Dropdown } from "../ui/Dropdown";
 import { Input } from "../ui/Input";
 import { SettingContainer } from "../ui/SettingContainer";
 import { SettingsGroup } from "../ui/SettingsGroup";
+import { CloudUsagePanel } from "./CloudUsagePanel";
 
 const KEY_URLS: Record<CloudProvider, string> = {
   gemini: "https://aistudio.google.com/apikey",
@@ -196,6 +197,9 @@ export const CloudSettings: React.FC = () => {
             }}
           />
         ))}
+      {mode === "cloud" && (
+        <CloudUsagePanel providers={engines.map((e) => e.provider)} />
+      )}
     </SettingsGroup>
   );
 };

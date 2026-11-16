@@ -205,6 +205,8 @@ const settingUpdaters: {
   chinese_script: (value) =>
     commands.changeChineseScriptSetting(value as ChineseScript),
   listen_mode: (value) => commands.changeListenModeSetting(value as ListenMode),
+  show_dock_icon: (value) =>
+    commands.changeShowDockIconSetting(value as boolean),
   show_tray_icon: (value) =>
     commands.changeShowTrayIconSetting(value as boolean),
   transcribe_accelerator: (value) =>

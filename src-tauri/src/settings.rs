@@ -150,8 +150,9 @@ pub enum OverlayStyle {
 pub enum ModelUnloadTimeout {
     Never,
     Immediately,
-    Min2,
+    // Kothalipi: free the model's memory after 2 idle minutes by default.
     #[default]
+    Min2,
     Min5,
     Min10,
     Min15,
@@ -565,6 +566,10 @@ pub struct AppSettings {
     pub keyboard_implementation: KeyboardImplementation,
     #[serde(default = "default_show_tray_icon")]
     pub show_tray_icon: bool,
+    /// macOS: also show Kothalipi in the Dock while its window is open. Off by
+    /// default, so the app lives in the menu bar only.
+    #[serde(default)]
+    pub show_dock_icon: bool,
     #[serde(default = "default_paste_delay_ms")]
     pub paste_delay_ms: u64,
     #[serde(default = "default_paste_delay_after_ms")]
@@ -1142,6 +1147,7 @@ pub fn get_default_settings() -> AppSettings {
         airpods_mode: false,
         keyboard_implementation: KeyboardImplementation::default(),
         show_tray_icon: default_show_tray_icon(),
+        show_dock_icon: false,
         paste_delay_ms: default_paste_delay_ms(),
         paste_delay_after_ms: default_paste_delay_after_ms(),
         reliable_paste: false,

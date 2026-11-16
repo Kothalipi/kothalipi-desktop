@@ -536,7 +536,13 @@ impl ShortcutAction for TranscribeAction {
             // The key wants a different model than the one in memory.
             tm.reload_model_on_next_use();
         }
-        let load_started = !selected_model.is_empty() && tm.initiate_model_load(true);
+        // Kothalipi: in Cloud mode the cloud does the work, so don't spend the
+        // memory and CPU on loading the offline model for every recording. It
+        // still loads on demand if every cloud engine fails.
+        let cloud_ready =
+            crate::cloud_stt::cloud_ready(&crate::language_hotkeys::session_settings(app));
+        let load_started =
+            !selected_model.is_empty() && !cloud_ready && tm.initiate_model_load(true);
         let rm_clone = Arc::clone(&rm);
         std::thread::spawn(move || {
             if let Err(e) = rm_clone.preload_vad() {
@@ -548,8 +554,6 @@ impl ShortcutAction for TranscribeAction {
         // Don't open the mic if nothing can transcribe the recording. A load
         // started above reports its own failure; one already running doesn't.
         // Kothalipi: in Cloud mode with a key, the cloud can transcribe it.
-        let cloud_ready =
-            crate::cloud_stt::cloud_ready(&crate::language_hotkeys::session_settings(app));
         if !cloud_ready && !tm.is_model_loaded() {
             if selected_model.is_empty() {
                 warn!("Not starting recording: no model is selected");

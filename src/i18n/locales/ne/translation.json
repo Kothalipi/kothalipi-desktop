@@ -615,6 +615,10 @@
         "label": "ट्रे आइकन देखाउनुहोस्",
         "description": "सिस्टम ट्रेमा Kothalipi आइकन देखाउनुहोस्।"
       },
+      "showDockIcon": {
+        "label": "Show in Dock",
+        "description": "Kothalipi lives in the menu bar. Turn this on to also keep it in the Dock while its window is open."
+      },
       "overlay": {
         "style": {
           "title": "ओभरले",
@@ -1036,7 +1040,17 @@
         "keyWorks": "Key works and is saved",
         "enabled": "On",
         "moveUp": "Try earlier",
-        "moveDown": "Try later"
+        "moveDown": "Try later",
+        "usage": {
+          "title": "Usage today",
+          "none": "Nothing sent to the cloud yet today.",
+          "line": "{{requests}} requests · {{minutes}} min of audio · {{failed}} failed",
+          "limit": "Limit reached",
+          "retryIn": "Try again in {{time}}.",
+          "note": "Google and OpenAI don't share a key's remaining quota with apps. This is Kothalipi's own count; your provider's page shows the exact limit.",
+          "openGemini": "Gemini usage and limits",
+          "openOpenai": "OpenAI usage"
+        }
       }
     }
   },

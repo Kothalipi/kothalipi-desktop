@@ -9,6 +9,7 @@ mod chinese_script;
 pub mod cli;
 mod clipboard;
 mod cloud_stt;
+mod cloud_usage;
 mod commands;
 mod dev_fixtures;
 mod device;
@@ -115,6 +116,38 @@ fn build_console_filter() -> env_filter::Filter {
     builder.build()
 }
 
+/// Whether the app should be hidden from the Dock: only when the user has not
+/// asked for a Dock icon AND the menu-bar icon is there to get back in.
+#[cfg(target_os = "macos")]
+fn dock_hidden(app: &AppHandle) -> bool {
+    let settings = get_settings(app);
+    let tray_available = settings.show_tray_icon && !app.state::<CliArgs>().no_tray;
+    tray_available && !settings.show_dock_icon
+}
+
+/// Apply the Dock setting to the running app (macOS only).
+pub fn apply_dock_policy(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if dock_hidden(app) {
+            tauri::ActivationPolicy::Accessory
+        } else {
+            tauri::ActivationPolicy::Regular
+        };
+        if let Err(e) = app.set_activation_policy(policy) {
+            log::error!("Failed to set activation policy: {}", e);
+        }
+        // Switching policy can drop focus; bring the window back if it is open.
+        if let Some(w) = app.get_webview_window("main") {
+            if w.is_visible().unwrap_or(false) {
+                let _ = w.set_focus();
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
         if let Err(e) = main_window.unminimize() {
@@ -126,10 +159,14 @@ fn show_main_window(app: &AppHandle) {
         if let Err(e) = main_window.set_focus() {
             log::error!("Failed to focus webview window: {}", e);
         }
+        // Menu-bar-only by default: stay an Accessory app unless the Dock icon
+        // was asked for (or there is no tray to get back in with).
         #[cfg(target_os = "macos")]
         {
-            if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
-                log::error!("Failed to set activation policy to Regular: {}", e);
+            if !dock_hidden(app) {
+                if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
+                    log::error!("Failed to set activation policy to Regular: {}", e);
+                }
             }
         }
         return;
@@ -169,11 +206,12 @@ fn apply_startup_activation_policy(app: &mut tauri::App, headless_mode: bool) {
     let cli_args = app.state::<CliArgs>().inner().clone();
     let settings = settings::get_settings(app.handle());
 
-    let should_hide = settings.start_hidden || cli_args.start_hidden;
     let tray_available = settings.show_tray_icon && !cli_args.no_tray;
 
-    if should_hide && tray_available {
-        log::info!("Starting hidden with tray available: launching as Accessory (no Dock icon)");
+    // Menu-bar-only: no Dock icon from the first frame, unless the user turned
+    // the Dock icon on.
+    if tray_available && !settings.show_dock_icon {
+        log::info!("Tray available and Dock icon off: launching as Accessory (no Dock icon)");
         app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     }
 }
@@ -761,6 +799,8 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_keyboard_implementation_setting,
             shortcut::get_keyboard_implementation,
             shortcut::change_show_tray_icon_setting,
+            shortcut::change_show_dock_icon_setting,
+            cloud_usage::get_cloud_usage,
             shortcut::change_transcribe_accelerator_setting,
             shortcut::change_transcribe_gpu_device,
             shortcut::get_available_accelerators,
@@ -1174,10 +1214,8 @@ pub fn run(cli_args: CliArgs) {
 
                 #[cfg(target_os = "macos")]
                 {
-                    let settings = get_settings(window.app_handle());
-                    let tray_visible =
-                        settings.show_tray_icon && !window.app_handle().state::<CliArgs>().no_tray;
-                    if tray_visible {
+                    // With the Dock icon switched on the app stays in the Dock.
+                    if dock_hidden(window.app_handle()) {
                         // Tray is available: hide the dock icon, app lives in the tray
                         let res = window
                             .app_handle()
