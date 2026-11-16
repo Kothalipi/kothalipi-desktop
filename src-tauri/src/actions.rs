@@ -84,17 +84,24 @@ fn finish_without_text(
     input_silent: bool,
     sample_count: usize,
     stop_time: Instant,
+    session: Option<u64>,
 ) {
+    // A newer recording may own the overlay and tray by now.
+    let owns_ui = session.is_none_or(|s| RECORDING_SESSION.load(Ordering::SeqCst) == s);
     if input_silent {
         warn!("The microphone sent only digital silence; nothing was transcribed");
-        notices::raise(
-            app,
-            Notice::new(NoticeCode::MicrophoneSilent, NoticeSource::Dictation),
-        );
-    } else {
+        let notice = Notice::new(NoticeCode::MicrophoneSilent, NoticeSource::Dictation);
+        if owns_ui {
+            notices::raise(app, notice);
+        } else {
+            notices::raise_without_overlay(app, notice);
+        }
+    } else if owns_ui {
         utils::hide_recording_overlay(app);
     }
-    set_tray_state(app, TrayIconState::Idle);
+    if owns_ui {
+        set_tray_state(app, TrayIconState::Idle);
+    }
     emit_transcription_complete(app, empty_outcome(input_silent), sample_count, stop_time);
 }
 
@@ -109,14 +116,98 @@ const POST_PROCESS_TIMEOUT: Duration = Duration::from_secs(60);
 /// doesn't reset the tray or hide the overlay of a newer one.
 static RECORDING_SESSION: AtomicU64 = AtomicU64::new(0);
 
+/// What a finished transcription task does to the UI: hide the overlay and
+/// reset the tray, but only while no newer recording has taken them over.
+fn release_ui(app: &AppHandle, session: u64) {
+    if RECORDING_SESSION.load(Ordering::SeqCst) == session {
+        utils::hide_recording_overlay(app);
+        set_tray_state(app, TrayIconState::Idle);
+    }
+}
+
+/// Text is typed in the order the recordings were made, even when a later
+/// recording is transcribed faster than an earlier one (cloud mode lets the
+/// next recording start while the last one is still being transcribed).
+mod paste_order {
+    use std::collections::BTreeSet;
+    use std::sync::Mutex;
+
+    struct Order {
+        next: u64,
+        serving: u64,
+        done: BTreeSet<u64>,
+    }
+
+    static ORDER: Mutex<Order> = Mutex::new(Order {
+        next: 0,
+        serving: 0,
+        done: BTreeSet::new(),
+    });
+    static CHANGED: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
+    /// A place in line. Dropping it (typing finished, cancelled, failed) lets
+    /// the next recording's text through.
+    pub struct Turn(u64);
+
+    impl Turn {
+        pub fn take() -> Self {
+            let mut o = ORDER.lock().unwrap_or_else(|e| e.into_inner());
+            let t = o.next;
+            o.next += 1;
+            Turn(t)
+        }
+
+        pub async fn wait(&self) {
+            loop {
+                // Created before the check, so a change in between isn't missed.
+                let changed = CHANGED.notified();
+                if ORDER.lock().unwrap_or_else(|e| e.into_inner()).serving == self.0 {
+                    return;
+                }
+                changed.await;
+            }
+        }
+    }
+
+    impl Drop for Turn {
+        fn drop(&mut self) {
+            let mut o = ORDER.lock().unwrap_or_else(|e| e.into_inner());
+            o.done.insert(self.0);
+            loop {
+                let serving = o.serving;
+                if !o.done.remove(&serving) {
+                    break;
+                }
+                o.serving += 1;
+            }
+            drop(o);
+            CHANGED.notify_waiters();
+        }
+    }
+}
+
 /// Drop guard that finishes the transcription pipeline, including immediate
 /// model unloading on early exits.
-struct FinishGuard(AppHandle, Arc<TranscriptionManager>);
+struct FinishGuard(AppHandle, Arc<TranscriptionManager>, bool);
+impl FinishGuard {
+    /// Tell the coordinator the pipeline is free now, so the next recording can
+    /// start while this one is still being transcribed in the cloud.
+    fn release_early(&mut self) {
+        if !self.2 {
+            self.2 = true;
+            if let Some(c) = self.0.try_state::<TranscriptionCoordinator>() {
+                c.notify_processing_finished();
+            }
+        }
+    }
+}
 impl Drop for FinishGuard {
     fn drop(&mut self) {
         self.1.maybe_unload_immediately("transcription session");
-        if let Some(c) = self.0.try_state::<TranscriptionCoordinator>() {
-            c.notify_processing_finished();
+        if !self.2 {
+            if let Some(c) = self.0.try_state::<TranscriptionCoordinator>() {
+                c.notify_processing_finished();
+            }
         }
         // The pipeline just freed its large transient buffers (captured PCM,
         // WAV copy, engine scratch); hand the cached pages back to the OS so
@@ -543,6 +634,9 @@ impl ShortcutAction for TranscribeAction {
             crate::cloud_stt::cloud_ready(&crate::language_hotkeys::session_settings(app));
         let load_started =
             !selected_model.is_empty() && !cloud_ready && tm.initiate_model_load(true);
+        if cloud_ready {
+            crate::cloud_stt::prewarm(&crate::language_hotkeys::session_settings(app));
+        }
         let rm_clone = Arc::clone(&rm);
         std::thread::spawn(move || {
             if let Err(e) = rm_clone.preload_vad() {
@@ -755,9 +849,12 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
         let cancel_generation = rm.cancel_generation();
+        // This recording's session and its place in the typing order.
+        let session = RECORDING_SESSION.load(Ordering::SeqCst);
+        let turn = paste_order::Turn::take();
 
         tauri::async_runtime::spawn(async move {
-            let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
+            let mut guard = FinishGuard(ah.clone(), Arc::clone(&tm), false);
             debug!(
                 "Starting async transcription task for binding: {}",
                 binding_id
@@ -777,8 +874,7 @@ impl ShortcutAction for TranscribeAction {
                 if rm.was_cancelled_since(cancel_generation) {
                     debug!("Transcription operation cancelled after recording stop");
                     tm.cancel_stream();
-                    utils::hide_recording_overlay(&ah);
-                    set_tray_state(&ah, TrayIconState::Idle);
+                    release_ui(&ah, session);
                     return;
                 }
 
@@ -787,8 +883,18 @@ impl ShortcutAction for TranscribeAction {
                     // Tear down any streaming worker so its channel doesn't leak
                     // and block the next start_stream.
                     tm.cancel_stream();
-                    finish_without_text(&ah, input_silent, 0, stop_time);
+                    finish_without_text(&ah, input_silent, 0, stop_time, Some(session));
                 } else {
+                    // Kothalipi: cloud transcription doesn't touch the microphone or
+                    // the offline engine, so free the pipeline now. The next
+                    // recording can start while this one is on its way, and its
+                    // language can't change what this one uses (settings are
+                    // read here, once).
+                    let settings_snapshot = crate::language_hotkeys::session_settings(&ah);
+                    if crate::cloud_stt::cloud_ready(&settings_snapshot) {
+                        guard.release_early();
+                    }
+
                     // Save WAV concurrently with transcription
                     let sample_count = samples.len();
                     let file_name = format!("kothalipi-{}.wav", chrono::Utc::now().timestamp());
@@ -805,8 +911,13 @@ impl ShortcutAction for TranscribeAction {
                     // as an error, so it never starts a batch run.
                     let transcription_time = Instant::now();
                     // Kothalipi: cloud engines first in Cloud mode, then offline.
-                    let transcription_result =
-                        crate::cloud_stt::transcribe_recording(&ah, &tm, samples).await;
+                    let transcription_result = crate::cloud_stt::transcribe_recording(
+                        &ah,
+                        &tm,
+                        samples,
+                        settings_snapshot,
+                    )
+                    .await;
 
                     // Await WAV save and verify
                     let wav_saved = match wav_handle.await {
@@ -832,10 +943,12 @@ impl ShortcutAction for TranscribeAction {
                         }
                     };
 
+                    // Wait for earlier recordings to be typed first.
+                    turn.wait().await;
+
                     if rm.was_cancelled_since(cancel_generation) {
                         debug!("Transcription operation cancelled before output handling");
-                        utils::hide_recording_overlay(&ah);
-                        set_tray_state(&ah, TrayIconState::Idle);
+                        release_ui(&ah, session);
                         return;
                     }
 
@@ -864,15 +977,13 @@ impl ShortcutAction for TranscribeAction {
                             .await
                             else {
                                 debug!("Transcription operation cancelled during output handling");
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
+                                release_ui(&ah, session);
                                 return;
                             };
 
                             if rm.was_cancelled_since(cancel_generation) {
                                 debug!("Transcription operation cancelled before paste");
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
+                                release_ui(&ah, session);
                                 return;
                             }
 
@@ -899,26 +1010,31 @@ impl ShortcutAction for TranscribeAction {
                             .await
                             else {
                                 debug!("Transcription operation cancelled during hook");
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
+                                release_ui(&ah, session);
                                 return;
                             };
 
                             if final_text.is_empty() {
-                                finish_without_text(&ah, input_silent, sample_count, stop_time);
+                                finish_without_text(
+                                    &ah,
+                                    input_silent,
+                                    sample_count,
+                                    stop_time,
+                                    Some(session),
+                                );
                             } else {
                                 let ah_clone = ah.clone();
                                 let paste_time = Instant::now();
                                 let post_process_failed = processed.post_process_failed;
                                 let rm_for_paste = Arc::clone(&rm);
-                                // Taken before the paste thread exists, and so
-                                // before the next session can start.
-                                let session = RECORDING_SESSION.load(Ordering::SeqCst);
                                 // Off the main thread: paste sleeps between steps, and a
                                 // paste into Kothalipi's own windows needs the main thread free.
                                 std::thread::Builder::new()
                                     .name("paste".into())
                                     .spawn(move || {
+                                        // Held until this text is typed, so a later
+                                        // recording can't paste in the middle of it.
+                                        let _turn = turn;
                                         if rm_for_paste.was_cancelled_since(cancel_generation) {
                                             debug!(
                                                 "Transcription operation cancelled before paste"
@@ -997,8 +1113,7 @@ impl ShortcutAction for TranscribeAction {
                                     .map(|_| ())
                                     .unwrap_or_else(|e| {
                                         error!("Failed to start the paste thread: {:?}", e);
-                                        utils::hide_recording_overlay(&ah);
-                                        set_tray_state(&ah, TrayIconState::Idle);
+                                        release_ui(&ah, session);
                                         emit_transcription_complete(
                                             &ah,
                                             TranscriptionOutcome::Failed,
@@ -1013,20 +1128,21 @@ impl ShortcutAction for TranscribeAction {
                                 debug!(
                                     "Transcription operation cancelled after transcription error"
                                 );
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
+                                release_ui(&ah, session);
                                 return;
                             }
 
                             error!("Transcription failed: {}", err);
-                            notices::raise(
-                                &ah,
-                                Notice::new(
-                                    NoticeCode::TranscriptionFailed,
-                                    NoticeSource::Dictation,
-                                )
-                                .with_detail(err.to_string()),
-                            );
+                            let failed = Notice::new(
+                                NoticeCode::TranscriptionFailed,
+                                NoticeSource::Dictation,
+                            )
+                            .with_detail(err.to_string());
+                            if RECORDING_SESSION.load(Ordering::SeqCst) == session {
+                                notices::raise(&ah, failed);
+                            } else {
+                                notices::raise_without_overlay(&ah, failed);
+                            }
                             // Save entry with empty text so user can retry
                             if wav_saved {
                                 if let Err(save_err) = hm.save_entry(
@@ -1040,7 +1156,9 @@ impl ShortcutAction for TranscribeAction {
                                     error!("Failed to save failed history entry: {}", save_err);
                                 }
                             }
-                            set_tray_state(&ah, TrayIconState::Idle);
+                            if RECORDING_SESSION.load(Ordering::SeqCst) == session {
+                                set_tray_state(&ah, TrayIconState::Idle);
+                            }
                             emit_transcription_complete(
                                 &ah,
                                 TranscriptionOutcome::Failed,
@@ -1054,8 +1172,7 @@ impl ShortcutAction for TranscribeAction {
                 debug!("No samples retrieved from recording stop");
                 // Tear down any streaming worker so its channel doesn't leak.
                 tm.cancel_stream();
-                utils::hide_recording_overlay(&ah);
-                set_tray_state(&ah, TrayIconState::Idle);
+                release_ui(&ah, session);
                 if !rm.was_cancelled_since(cancel_generation) {
                     emit_transcription_complete(&ah, TranscriptionOutcome::Empty, 0, stop_time);
                 }

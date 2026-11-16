@@ -110,13 +110,13 @@ pub async fn transcribe(
     samples: &[f32],
     language: Option<&str>,
 ) -> Result<(String, CloudProvider), Vec<EngineFailure>> {
-    let wav = encode_wav(samples);
+    let audio = encode_audio(samples);
     let mut failures = Vec::new();
     for engine in usable_engines(settings) {
         let key = api_key(settings, &engine.provider);
         let result = match engine.provider {
-            CloudProvider::Gemini => gemini(key, &engine.model, &wav, language).await,
-            CloudProvider::OpenAi => openai(key, &engine.model, &wav, language).await,
+            CloudProvider::Gemini => gemini(key, &engine.model, &audio, language).await,
+            CloudProvider::OpenAi => openai(key, &engine.model, &audio, language).await,
         };
         match result {
             Ok(text) => {
@@ -145,11 +145,39 @@ pub async fn transcribe(
 
 type EngineResult = Result<String, EngineError>;
 
+/// One client for the whole app, so a dictation reuses the connection (and its
+/// TLS handshake) that the last one, or the key press, already opened.
 fn client() -> Result<reqwest::Client, (FailureKind, String)> {
-    reqwest::Client::builder()
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    if let Some(c) = CLIENT.get() {
+        return Ok(c.clone());
+    }
+    let built = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
+        .connect_timeout(Duration::from_secs(10))
+        .pool_idle_timeout(Duration::from_secs(120))
+        .tcp_keepalive(Duration::from_secs(30))
+        .tcp_nodelay(true)
         .build()
-        .map_err(|e| (FailureKind::Network, e.to_string()))
+        .map_err(|e| (FailureKind::Network, e.to_string()))?;
+    Ok(CLIENT.get_or_init(|| built).clone())
+}
+
+/// Open the connection to the first cloud engine while the user is still
+/// speaking, so the upload doesn't wait for DNS and TLS afterwards.
+pub fn prewarm(settings: &AppSettings) {
+    let Some(engine) = usable_engines(settings).into_iter().next() else {
+        return;
+    };
+    let url = match engine.provider {
+        CloudProvider::Gemini => "https://generativelanguage.googleapis.com/",
+        CloudProvider::OpenAi => "https://api.openai.com/",
+    };
+    tauri::async_runtime::spawn(async move {
+        if let Ok(c) = client() {
+            let _ = c.head(url).send().await; // the status doesn't matter, only the connection
+        }
+    });
 }
 
 /// Read the limit out of a 429 reply. Google sends a `QuotaFailure` (which
@@ -283,25 +311,28 @@ fn network(e: reqwest::Error) -> (FailureKind, String) {
     (FailureKind::Network, e.to_string())
 }
 
-/// BCP-47 tag for Gemini's language hint.
-fn gemini_language(language: Option<&str>) -> Option<&'static str> {
-    match language? {
-        "bn" => Some("bn-BD"),
-        "en" => Some("en-US"),
-        _ => None,
+/// BCP-47 tags for Gemini's language hint. "bn+en" is Bangla speech that may
+/// carry English words (how people really talk), so both are listed and Gemini
+/// writes each word in its own script.
+fn gemini_codes(language: Option<&str>) -> Vec<&'static str> {
+    match language {
+        Some("bn") => vec!["bn-BD"],
+        Some("en") => vec!["en-US"],
+        Some("bn+en") => vec!["bn-BD", "en-US"],
+        _ => vec![],
     }
 }
 
-fn gemini_body(model: &str, wav: &[u8], language: Option<&str>) -> serde_json::Value {
+fn gemini_body(model: &str, audio: &Audio, language: Option<&str>) -> serde_json::Value {
     let audio = serde_json::json!({
         "inlineData": {
-            "mimeType": "audio/wav",
-            "data": base64::engine::general_purpose::STANDARD.encode(wav),
+            "mimeType": audio.mime,
+            "data": base64::engine::general_purpose::STANDARD.encode(&audio.bytes),
         }
     });
     if model.contains("transcribe") {
         // Dedicated transcription model: the hint goes in its config.
-        let codes: Vec<&str> = gemini_language(language).into_iter().collect();
+        let codes = gemini_codes(language);
         serde_json::json!({
             "contents": [{ "parts": [audio] }],
             "generationConfig": { "audioTranscriptionConfig": { "languageCodes": codes } },
@@ -309,7 +340,9 @@ fn gemini_body(model: &str, wav: &[u8], language: Option<&str>) -> serde_json::V
     } else {
         // A general Gemini model: ask for a verbatim transcript.
         let lang = match language {
-            Some("bn") => "Bangla. Write Bangla in Bangla script and keep English words in English",
+            Some("bn") | Some("bn+en") => {
+                "Bangla. Write Bangla in Bangla script and keep English words in English"
+            }
             Some("en") => "English",
             _ => "the spoken language",
         };
@@ -339,7 +372,7 @@ fn gemini_text(json: &serde_json::Value) -> Option<String> {
     Some(text)
 }
 
-async fn gemini(key: &str, model: &str, wav: &[u8], language: Option<&str>) -> EngineResult {
+async fn gemini(key: &str, model: &str, audio: &Audio, language: Option<&str>) -> EngineResult {
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
         model.trim()
@@ -347,7 +380,7 @@ async fn gemini(key: &str, model: &str, wav: &[u8], language: Option<&str>) -> E
     let response = client()?
         .post(url)
         .header("x-goog-api-key", key)
-        .json(&gemini_body(model, wav, language))
+        .json(&gemini_body(model, audio, language))
         .send()
         .await
         .map_err(network)?;
@@ -374,10 +407,10 @@ struct OpenAiTranscript {
     text: String,
 }
 
-async fn openai(key: &str, model: &str, wav: &[u8], language: Option<&str>) -> EngineResult {
-    let file = reqwest::multipart::Part::bytes(wav.to_vec())
-        .file_name("audio.wav")
-        .mime_str("audio/wav")
+async fn openai(key: &str, model: &str, audio: &Audio, language: Option<&str>) -> EngineResult {
+    let file = reqwest::multipart::Part::bytes(audio.bytes.clone())
+        .file_name(format!("audio.{}", audio.ext))
+        .mime_str(audio.mime)
         .map_err(|e| (FailureKind::BadResponse, e.to_string()))?;
     let mut form = reqwest::multipart::Form::new()
         .part("file", file)
@@ -389,7 +422,13 @@ async fn openai(key: &str, model: &str, wav: &[u8], language: Option<&str>) -> E
         } else {
             "language"
         };
-        form = form.text(field, lang.to_string());
+        for l in lang.split('+') {
+            // Older models take a single `language`: the first one.
+            form = form.text(field, l.to_string());
+            if field == "language" {
+                break;
+            }
+        }
     }
     let response = client()?
         .post("https://api.openai.com/v1/audio/transcriptions")
@@ -416,10 +455,15 @@ pub async fn transcribe_recording(
     app: &tauri::AppHandle,
     tm: &crate::managers::transcription::TranscriptionManager,
     samples: Vec<f32>,
+    settings: AppSettings,
 ) -> anyhow::Result<crate::managers::transcription::Transcription> {
-    let settings = crate::language_hotkeys::session_settings(app);
     if cloud_ready(&settings) {
-        let language = Some(settings.selected_language.as_str()).filter(|l| *l != "auto");
+        // The Bangla key also understands English words said in between.
+        let language = match settings.selected_language.as_str() {
+            "auto" => None,
+            "bn" => Some("bn+en"),
+            other => Some(other),
+        };
         match transcribe(&settings, &samples, language).await {
             Ok((text, provider)) => {
                 crate::cloud_usage::record_success(app, &provider, samples.len() as f64 / 16_000.0);
@@ -523,6 +567,44 @@ pub async fn check_key(provider: &CloudProvider, key: &str) -> Result<(), String
 }
 
 /// 16-bit PCM WAV, the most widely accepted upload format.
+/// Audio ready to upload: FLAC when it encodes (about half the size of WAV, which
+/// matters on a slow upload), WAV otherwise.
+pub struct Audio {
+    bytes: Vec<u8>,
+    mime: &'static str,
+    ext: &'static str,
+}
+
+pub fn encode_audio(samples: &[f32]) -> Audio {
+    match encode_flac(samples) {
+        Some(bytes) => Audio {
+            bytes,
+            mime: "audio/flac",
+            ext: "flac",
+        },
+        None => Audio {
+            bytes: encode_wav(samples),
+            mime: "audio/wav",
+            ext: "wav",
+        },
+    }
+}
+
+fn encode_flac(samples: &[f32]) -> Option<Vec<u8>> {
+    use flacenc::component::BitRepr;
+    use flacenc::error::Verify;
+    let pcm: Vec<i32> = samples
+        .iter()
+        .map(|s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i32)
+        .collect();
+    let config = flacenc::config::Encoder::default().into_verified().ok()?;
+    let source = flacenc::source::MemSource::from_samples(&pcm, 1, 16, SAMPLE_RATE as usize);
+    let stream = flacenc::encode_with_fixed_block_size(&config, source, config.block_size).ok()?;
+    let mut sink = flacenc::bitsink::ByteSink::new();
+    stream.write(&mut sink).ok()?;
+    Some(sink.as_slice().to_vec())
+}
+
 pub fn encode_wav(samples: &[f32]) -> Vec<u8> {
     let data_len = (samples.len() * 2) as u32;
     let mut out = Vec::with_capacity(44 + data_len as usize);
@@ -554,6 +636,129 @@ mod tests {
             "candidates": [{ "content": { "parts": [{ "audioTranscription": { "text": "Hello hello." } }], "role": "model" }, "finishReason": "STOP" }]
         });
         assert_eq!(super::gemini_text(&json).as_deref(), Some("Hello hello."));
+    }
+
+    fn test_audio() -> super::Audio {
+        super::encode_audio(&[0.0, 0.1, -0.1, 0.2])
+    }
+
+    #[test]
+    fn mixed_bangla_english_lists_both_languages() {
+        let b = super::gemini_body(super::GEMINI_DEFAULT_MODEL, &test_audio(), Some("bn+en"));
+        let codes: Vec<&str> = b
+            .pointer("/generationConfig/audioTranscriptionConfig/languageCodes")
+            .and_then(|c| c.as_array())
+            .unwrap()
+            .iter()
+            .filter_map(|c| c.as_str())
+            .collect();
+        assert_eq!(codes, vec!["bn-BD", "en-US"]);
+    }
+
+    #[test]
+    fn flac_upload_is_smaller_than_wav() {
+        let samples: Vec<f32> = (0..16_000)
+            .map(|i| ((i as f32) * 0.05).sin() * 0.3)
+            .collect();
+        let a = super::encode_audio(&samples);
+        assert_eq!(a.mime, "audio/flac");
+        assert_eq!(&a.bytes[0..4], b"fLaC");
+        assert!(a.bytes.len() < super::encode_wav(&samples).len() / 2);
+    }
+
+    /// Word error rate (edit distance over words) and character error rate.
+    fn error_rates(expected: &str, got: &str) -> (f64, f64) {
+        fn norm(t: &str) -> String {
+            t.chars()
+                .filter(|c| !c.is_ascii_punctuation() && !"।॥?!,.;:“”\"'".contains(*c))
+                .collect::<String>()
+                .to_lowercase()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        }
+        fn dist<T: PartialEq>(a: &[T], b: &[T]) -> usize {
+            let mut prev: Vec<usize> = (0..=b.len()).collect();
+            for i in 1..=a.len() {
+                let mut cur = vec![i];
+                for j in 1..=b.len() {
+                    let cost = usize::from(a[i - 1] != b[j - 1]);
+                    cur.push((prev[j] + 1).min(cur[j - 1] + 1).min(prev[j - 1] + cost));
+                }
+                prev = cur;
+            }
+            prev[b.len()]
+        }
+        let (e, g) = (norm(expected), norm(got));
+        let ew: Vec<&str> = e.split(' ').collect();
+        let gw: Vec<&str> = g.split(' ').collect();
+        let ec: Vec<char> = e.chars().collect();
+        let gc: Vec<char> = g.chars().collect();
+        (
+            dist(&ew, &gw) as f64 / ew.len().max(1) as f64,
+            dist(&ec, &gc) as f64 / ec.len().max(1) as f64,
+        )
+    }
+
+    /// Live check against the real Gemini API with the app's own upload path.
+    /// `KOTHALIPI_EVAL_DIR` holds `name.<lang>.wav` + `name.<lang>.txt` (lang is
+    /// en, bn or bn+en); `KOTHALIPI_EVAL_KEY` is a Gemini key. Not run in CI.
+    #[test]
+    #[ignore]
+    fn live_gemini_accuracy() {
+        let dir = std::env::var("KOTHALIPI_EVAL_DIR").expect("KOTHALIPI_EVAL_DIR");
+        let key = std::env::var("KOTHALIPI_EVAL_KEY").expect("KOTHALIPI_EVAL_KEY");
+        let mut names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "wav"))
+            .collect();
+        names.sort();
+        let (mut tw, mut tc, mut n) = (0.0, 0.0, 0.0);
+        for wav in names {
+            let stem = wav.file_stem().unwrap().to_string_lossy().to_string();
+            let lang = stem.rsplit('.').next().unwrap().to_string();
+            let expected = std::fs::read_to_string(wav.with_extension("txt")).unwrap();
+            let mut r = hound::WavReader::open(&wav).unwrap();
+            let samples: Vec<f32> = r
+                .samples::<i16>()
+                .map(|s| s.unwrap() as f32 / i16::MAX as f32)
+                .collect();
+            let audio = super::encode_audio(&samples);
+            let t = std::time::Instant::now();
+            let got = tauri::async_runtime::block_on(super::gemini(
+                &key,
+                super::GEMINI_DEFAULT_MODEL,
+                &audio,
+                Some(&lang),
+            ));
+            let ms = t.elapsed().as_millis();
+            match got {
+                Ok(text) => {
+                    let (w, c) = error_rates(expected.trim(), &text);
+                    tw += w;
+                    tc += c;
+                    n += 1.0;
+                    println!(
+                        "[{lang}] WER {:.0}% CER {:.0}% {ms}ms {}KB\n   want: {}\n   got:  {}",
+                        w * 100.0,
+                        c * 100.0,
+                        audio.bytes.len() / 1024,
+                        expected.trim(),
+                        text
+                    );
+                }
+                Err(e) => println!("[{lang}] FAILED {:?}: {}", e.kind, e.detail),
+            }
+        }
+        if n > 0.0 {
+            println!(
+                "AVERAGE WER {:.1}% CER {:.1}%",
+                tw / n * 100.0,
+                tc / n * 100.0
+            );
+        }
     }
 
     #[test]
@@ -679,14 +884,14 @@ mod tests {
 
     #[test]
     fn gemini_request_uses_transcription_config_or_prompt() {
-        let b = gemini_body(GEMINI_DEFAULT_MODEL, &[1, 2], Some("bn"));
+        let b = gemini_body(GEMINI_DEFAULT_MODEL, &test_audio(), Some("bn"));
         assert_eq!(
             b.pointer("/generationConfig/audioTranscriptionConfig/languageCodes/0"),
             Some(&serde_json::json!("bn-BD"))
         );
         assert!(b.pointer("/contents/0/parts/0/inlineData/data").is_some());
 
-        let g = gemini_body("gemini-3-flash", &[1], Some("en"));
+        let g = gemini_body("gemini-3-flash", &test_audio(), Some("en"));
         assert!(g.pointer("/contents/0/parts/0/text").is_some());
         assert!(g
             .pointer("/generationConfig/audioTranscriptionConfig")
