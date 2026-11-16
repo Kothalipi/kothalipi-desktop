@@ -140,7 +140,7 @@ impl ModelManager {
     fn compute_sha256(path: &Path) -> Result<String> {
         let mut file = File::open(path)?;
         let mut hasher = Sha256::new();
-        let mut buffer = [0u8; 65536];
+        let mut buffer = vec![0u8; 1 << 20];
         loop {
             let n = file.read(&mut buffer)?;
             if n == 0 {
@@ -351,6 +351,32 @@ impl ModelManager {
             expected_size.or_else(|| response.content_length().map(|l| resume_from + l));
         let total_size = known_total.unwrap_or(0);
         let mut downloaded = resume_from;
+        // Hash as the bytes arrive, so verifying needs no second pass over a
+        // multi-hundred-MB file (which pinned a CPU core for seconds). A resumed
+        // download hashes the part already on disk once, off the async thread.
+        let mut hasher: Option<Sha256> = None;
+        if expected_sha256.is_some() {
+            hasher = Some(if resume_from > 0 {
+                let existing = partial_path.to_path_buf();
+                tokio::task::spawn_blocking(move || -> Result<Sha256> {
+                    let mut h = Sha256::new();
+                    let mut file = File::open(&existing)?;
+                    let mut buf = vec![0u8; 1 << 20];
+                    loop {
+                        let n = file.read(&mut buf)?;
+                        if n == 0 {
+                            break;
+                        }
+                        h.update(&buf[..n]);
+                    }
+                    Ok(h)
+                })
+                .await
+                .map_err(|e| anyhow::anyhow!("SHA256 task panicked: {}", e))??
+            } else {
+                Sha256::new()
+            });
+        }
         let mut file = if resume_from > 0 {
             std::fs::OpenOptions::new()
                 .append(true)
@@ -425,6 +451,9 @@ impl ModelManager {
                 }
             }
             file.write_all(&chunk)?;
+            if let Some(h) = hasher.as_mut() {
+                h.update(&chunk);
+            }
             downloaded += chunk.len() as u64;
             if last_emit.elapsed() >= PROGRESS_THROTTLE {
                 let now = Instant::now();
@@ -450,7 +479,29 @@ impl ModelManager {
 
         // The catalog hash is the trust anchor: for a mirror (an untrusted
         // host) this verification is what makes the fallback safe at all.
-        Self::verify_file_with_events(model_id, partial_path, expected_sha256, emit).await?;
+        match (hasher, expected_sha256) {
+            (Some(h), Some(expected)) => {
+                emit(HttpDownloadEvent::VerificationStarted);
+                let actual = format!("{:x}", h.finalize());
+                if actual != expected {
+                    warn!(
+                        "SHA256 mismatch for model {}: expected {}, got {}",
+                        model_id, expected, actual
+                    );
+                    let _ = fs::remove_file(partial_path);
+                    return Err(anyhow::anyhow!(
+                        "Download verification failed for model {}: file is corrupt. Please retry.",
+                        model_id
+                    ));
+                }
+                info!("SHA256 verified for model {}", model_id);
+                emit(HttpDownloadEvent::VerificationCompleted);
+            }
+            _ => {
+                Self::verify_file_with_events(model_id, partial_path, expected_sha256, emit)
+                    .await?;
+            }
+        }
         Ok(HttpDownloadOutcome::Completed)
     }
 }

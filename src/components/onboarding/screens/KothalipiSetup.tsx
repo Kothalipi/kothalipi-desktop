@@ -41,6 +41,10 @@ const OPENAI_KEY_URL = "https://platform.openai.com/api-keys";
 const card =
   "flex w-full flex-col rounded-panel border border-line-strong px-[22px] text-start";
 
+/** A card taller than its screen scrolls inside the frame instead of running
+    under the footer (the model list with "Show more" open is taller than 600px). */
+const scrollCard = `${card} min-h-0 overflow-y-auto overscroll-contain`;
+
 /* ---------------- Listen: offline or cloud ---------------- */
 
 export const Listen: React.FC<{
@@ -542,7 +546,7 @@ export const Voices: React.FC<{
           />
         }
       >
-        <div className={card}>
+        <div className={scrollCard}>
           <LanguageModels
             lang="bangla"
             choices={BANGLA_CHOICES}

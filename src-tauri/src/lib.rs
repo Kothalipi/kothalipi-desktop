@@ -11,6 +11,7 @@ mod clipboard;
 mod cloud_stt;
 mod cloud_usage;
 mod commands;
+mod data_security;
 mod dev_fixtures;
 mod device;
 pub mod engine_supervisor;
@@ -1160,6 +1161,8 @@ pub fn run(cli_args: CliArgs) {
             // Secure Input monitor (macOS): detects stuck secure input that
             // silently blocks keyed shortcuts, warns the user, and activates
             // the Carbon fallback. See secure_input.rs and issue #1578.
+            // API keys and recordings: owner-only.
+            data_security::harden(&app_handle);
             secure_input::init(&app_handle);
 
             // Populate the overlay-enabled cache from initial settings so the
