@@ -219,7 +219,7 @@ jobs:
         run: rustup target add ${{ inputs.target }}
 
       - name: import Apple Developer Certificate
-        if: contains(inputs.platform, 'macos') && inputs.sign-binaries
+        if: contains(inputs.platform, 'macos') && inputs.sign-binaries && secrets.APPLE_CERTIFICATE != ''
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -235,7 +235,7 @@ jobs:
           security find-identity -v -p codesigning build.keychain
 
       - name: verify certificate
-        if: contains(inputs.platform, 'macos') && inputs.sign-binaries
+        if: contains(inputs.platform, 'macos') && inputs.sign-binaries && secrets.APPLE_CERTIFICATE != ''
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
@@ -446,9 +446,26 @@ jobs:
           chmod +x "$tools_dir/linuxdeploy-${arch}.AppImage"
           "$tools_dir/linuxdeploy-${arch}.AppImage" --appimage-extract-and-run --version
 
+      # Export Tauri updater keys whenever available so that updater artifacts
+      # and latest.json are signed and uploaded.
+      - name: Tauri updater signing environment
+        shell: bash
+        env:
+          S_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          S_TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            value_var="S_$name"
+            value="${!value_var}"
+            if [[ -n "$value" ]]; then
+              delim="EOF_$RANDOM$RANDOM"
+              { echo "$name<<$delim"; echo "$value"; echo "$delim"; } >> "$GITHUB_ENV"
+            fi
+          done
+
       # Kothalipi: export signing secrets only when signing. Declaring them as
       # empty strings makes Tauri try (and fail) to import an Apple certificate.
-      - name: Signing environment
+      - name: OS binary signing environment
         if: inputs.sign-binaries
         shell: bash
         env:
@@ -461,12 +478,9 @@ jobs:
           S_AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           S_AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           S_AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          S_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          S_TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           for name in APPLE_ID APPLE_ID_PASSWORD APPLE_PASSWORD APPLE_TEAM_ID APPLE_CERTIFICATE \
-                      APPLE_CERTIFICATE_PASSWORD AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID \
-                      TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+                      APPLE_CERTIFICATE_PASSWORD AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID; do
             value_var="S_$name"
             value="${!value_var}"
             if [[ -n "$value" ]]; then
