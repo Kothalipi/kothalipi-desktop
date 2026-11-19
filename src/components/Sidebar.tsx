@@ -1,17 +1,37 @@
-import React from "react";
+import React, { lazy } from "react";
 import { useTranslation } from "react-i18next";
 import { Cog, FlaskConical, History, Info, Sparkles, Cpu } from "lucide-react";
 import KothalipiLogo from "./icons/KothalipiLogo";
 import KothalipiMark from "./icons/KothalipiMark";
 import { useSettings } from "../hooks/useSettings";
-import {
-  GeneralSettings,
-  AdvancedSettings,
-  HistorySettings,
-  AboutSettings,
-  PostProcessingSettings,
-  ModelsSettings,
-} from "./settings";
+import { GeneralSettings } from "./settings/general/GeneralSettings";
+
+// Lazy-load secondary settings sections to optimize initial bundle size & startup speed
+const HistorySettings = lazy(() =>
+  import("./settings/history/HistorySettings").then((m) => ({
+    default: m.HistorySettings,
+  })),
+);
+const ModelsSettings = lazy(() =>
+  import("./settings/models/ModelsSettings").then((m) => ({
+    default: m.ModelsSettings,
+  })),
+);
+const AdvancedSettings = lazy(() =>
+  import("./settings/advanced/AdvancedSettings").then((m) => ({
+    default: m.AdvancedSettings,
+  })),
+);
+const PostProcessingSettings = lazy(() =>
+  import("./settings/post-processing/PostProcessingSettings").then((m) => ({
+    default: m.PostProcessingSettings,
+  })),
+);
+const AboutSettings = lazy(() =>
+  import("./settings/about/AboutSettings").then((m) => ({
+    default: m.AboutSettings,
+  })),
+);
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
 

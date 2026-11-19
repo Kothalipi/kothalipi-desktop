@@ -9,23 +9,35 @@ import {
   updateDocumentLanguage,
 } from "@/lib/utils/rtl";
 
-// Auto-discover translation files using Vite's glob import
-const localeModules = import.meta.glob<{ default: Record<string, unknown> }>(
-  "./locales/*/translation.json",
-  { eager: true },
-);
+import enTranslation from "./locales/en/translation.json";
+import bnTranslation from "./locales/bn/translation.json";
 
-// Build resources from discovered locale files
-const resources: Record<string, { translation: Record<string, unknown> }> = {};
-for (const [path, module] of Object.entries(localeModules)) {
-  const langCode = path.match(/\.\/locales\/(.+)\/translation\.json/)?.[1];
-  if (langCode) {
-    resources[langCode] = { translation: module.default };
-  }
-}
+// Eagerly load primary languages (en & bn); lazy-load others on demand
+const lazyLocaleModules = import.meta.glob<{
+  default: Record<string, unknown>;
+}>([
+  "./locales/*/translation.json",
+  "!./locales/en/translation.json",
+  "!./locales/bn/translation.json",
+]);
+
+// Initial resources contain English and Bengali
+const resources: Record<string, { translation: Record<string, unknown> }> = {
+  en: { translation: enTranslation },
+  bn: { translation: bnTranslation },
+};
+
+// Build supported languages list from static + lazy discovered locale paths
+const availableLocaleCodes = [
+  "en",
+  "bn",
+  ...Object.keys(lazyLocaleModules)
+    .map((path) => path.match(/\.\/locales\/(.+)\/translation\.json/)?.[1])
+    .filter((code): code is string => Boolean(code)),
+];
 
 // Build supported languages list from discovered locales + metadata
-export const SUPPORTED_LANGUAGES = Object.keys(resources)
+export const SUPPORTED_LANGUAGES = availableLocaleCodes
   .map((code) => {
     const meta = LANGUAGE_METADATA[code];
     if (!meta) {
@@ -98,6 +110,50 @@ i18n.use(initReactI18next).init({
     useSuspense: false, // Disable suspense for SSR compatibility
   },
 });
+
+// Dynamically load language bundle on demand if not already loaded
+export const ensureLanguageLoaded = async (langCode: string) => {
+  if (i18n.hasResourceBundle(langCode, "translation")) {
+    return;
+  }
+  const matchPath = Object.keys(lazyLocaleModules).find(
+    (p) =>
+      p.toLowerCase() ===
+      `./locales/${langCode.toLowerCase()}/translation.json`,
+  );
+  if (matchPath) {
+    const loader = lazyLocaleModules[matchPath];
+    if (loader) {
+      try {
+        const module = await loader();
+        i18n.addResourceBundle(
+          langCode,
+          "translation",
+          module.default,
+          true,
+          true,
+        );
+      } catch (err) {
+        console.error(
+          `Failed to load translation bundle for ${langCode}:`,
+          err,
+        );
+      }
+    }
+  }
+};
+
+// Wrap changeLanguage to ensure translations are loaded before switching
+const originalChangeLanguage = i18n.changeLanguage.bind(i18n);
+i18n.changeLanguage = (async (
+  lng?: string,
+  ...args: Parameters<typeof originalChangeLanguage>[1][]
+) => {
+  if (lng) {
+    await ensureLanguageLoaded(lng);
+  }
+  return originalChangeLanguage(lng, ...(args as [never]));
+}) as typeof originalChangeLanguage;
 
 // Sync language from app settings
 export const syncLanguageFromSettings = async () => {

@@ -4,6 +4,8 @@ import {
   useLayoutEffect,
   useState,
   useRef,
+  lazy,
+  Suspense,
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,8 +17,6 @@ import {
 import "./App.css";
 import SecureInputWarning from "./components/SecureInputWarning";
 import Footer from "./components/footer";
-import { OnboardingFlow } from "./components/onboarding/OnboardingFlow";
-import ModelMigration from "./components/onboarding/ModelMigration";
 import {
   ReplaceModel,
   ReturningPermissions,
@@ -25,7 +25,6 @@ import {
   clearOnboardingProgress,
   type OnboardingStep as OnboardingPreviewStep,
 } from "./components/onboarding/onboardingStore";
-import { DebugSettings, ModelsSettings } from "./components/settings";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FileDropOverlay } from "./components/FileDropOverlay";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
@@ -36,6 +35,26 @@ import { commands } from "@/bindings";
 import { deleteRetiredModel } from "@/lib/models/retired";
 import { NoticePanel } from "@/components/notices/NoticePanel";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
+
+// Lazy-load heavy flows and settings to keep initial app load instant
+const OnboardingFlow = lazy(() =>
+  import("./components/onboarding/OnboardingFlow").then((m) => ({
+    default: m.OnboardingFlow,
+  })),
+);
+const ModelMigration = lazy(
+  () => import("./components/onboarding/ModelMigration"),
+);
+const DebugSettings = lazy(() =>
+  import("./components/settings/debug/DebugSettings").then((m) => ({
+    default: m.DebugSettings,
+  })),
+);
+const ModelsSettings = lazy(() =>
+  import("./components/settings/models/ModelsSettings").then((m) => ({
+    default: m.ModelsSettings,
+  })),
+);
 
 // flow is first-run onboarding; the rest are single screens for returning users.
 type OnboardingStep =
@@ -52,24 +71,26 @@ const renderSettingsContent = (
   onRunModelMigration: () => void,
   onSectionChange: (section: SidebarSection) => void,
 ) => {
+  let element: ReactNode;
   if (section === "models") {
-    return (
+    element = (
       <ModelsSettings onChangeLanguages={() => onSectionChange("general")} />
     );
-  }
-  if (section === "debug") {
-    return (
+  } else if (section === "debug") {
+    element = (
       <DebugSettings
         onPreviewOnboarding={onPreviewOnboarding}
         onRunOnboarding={onRunOnboarding}
         onRunModelMigration={onRunModelMigration}
       />
     );
+  } else {
+    const ActiveComponent =
+      SECTIONS_CONFIG[section]?.component || SECTIONS_CONFIG.general.component;
+    element = <ActiveComponent />;
   }
 
-  const ActiveComponent =
-    SECTIONS_CONFIG[section]?.component || SECTIONS_CONFIG.general.component;
-  return <ActiveComponent />;
+  return <Suspense fallback={null}>{element}</Suspense>;
 };
 
 function App() {
@@ -358,7 +379,7 @@ function App() {
 
   return (
     <>
-      {content}
+      <Suspense fallback={null}>{content}</Suspense>
       <NoticePanel />
     </>
   );
