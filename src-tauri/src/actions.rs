@@ -377,6 +377,18 @@ async fn post_process_transcription(
         .post_process_api_keys
         .get(&provider.id)
         .cloned()
+        .filter(|k| !k.trim().is_empty())
+        .or_else(|| {
+            if provider.id == "gemini" {
+                settings
+                    .cloud_api_keys
+                    .get(crate::settings::CloudProvider::Gemini.key_id())
+                    .cloned()
+                    .filter(|k| !k.trim().is_empty())
+            } else {
+                None
+            }
+        })
         .unwrap_or_default();
 
     // Ask these providers to skip reasoning/thinking — post-processing rarely
