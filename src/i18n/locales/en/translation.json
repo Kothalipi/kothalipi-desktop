@@ -1,5 +1,9 @@
 {
   "tray": {
+    "startTranscribeBangla": "🎙️ Type in Bangla",
+    "startTranscribeEnglish": "🎙️ Type in English",
+    "startTranscribeTranslate": "✨ Translate to English",
+    "finishTranscription": "⏹️ Done / Type Text",
     "settings": "Settings...",
     "checkUpdates": "Check for Updates...",
     "copyLastTranscript": "Copy Last Transcript",

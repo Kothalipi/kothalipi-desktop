@@ -693,12 +693,20 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     let separator = || PredefinedMenuItem::separator(app);
 
     let menu = if inputs.busy {
+        let finish_i = MenuItem::with_id(
+            app,
+            "finish_transcription",
+            &strings.finish_transcription,
+            true,
+            None::<&str>,
+        )?;
         let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)?;
         Menu::with_items(
             app,
             &[
                 &version_i,
                 &separator()?,
+                &finish_i,
                 &cancel_i,
                 &separator()?,
                 &copy_last_transcript_i,
@@ -710,6 +718,28 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             ],
         )?
     } else {
+        let start_bangla_i = MenuItem::with_id(
+            app,
+            "start_transcribe_bangla",
+            &strings.start_transcribe_bangla,
+            true,
+            None::<&str>,
+        )?;
+        let start_english_i = MenuItem::with_id(
+            app,
+            "start_transcribe_english",
+            &strings.start_transcribe_english,
+            true,
+            None::<&str>,
+        )?;
+        let start_translate_i = MenuItem::with_id(
+            app,
+            "start_transcribe_translate",
+            &strings.start_transcribe_translate,
+            true,
+            None::<&str>,
+        )?;
+
         // Build model submenu — label is the active model name
         let submenu_label = inputs
             .downloaded_models
@@ -740,6 +770,10 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             &[
                 &version_i,
                 &separator()?,
+                &start_bangla_i,
+                &start_english_i,
+                &start_translate_i,
+                &separator()?,
                 &copy_last_transcript_i,
                 &separator()?,
                 &model_submenu,
@@ -751,9 +785,9 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &quit_i,
             ],
         )?;
-        // Right below the model submenu: version, separator, copy, separator, model.
+        // Right below the model submenu:
         if let Some(language) = &inputs.language {
-            menu.insert(&language_submenu(app, &strings, language)?, 5)?;
+            menu.insert(&language_submenu(app, &strings, language)?, 8)?;
         }
         menu
     };

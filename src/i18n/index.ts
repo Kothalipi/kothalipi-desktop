@@ -12,29 +12,14 @@ import {
 import enTranslation from "./locales/en/translation.json";
 import bnTranslation from "./locales/bn/translation.json";
 
-// Eagerly load primary languages (en & bn); lazy-load others on demand
-const lazyLocaleModules = import.meta.glob<{
-  default: Record<string, unknown>;
-}>([
-  "./locales/*/translation.json",
-  "!./locales/en/translation.json",
-  "!./locales/bn/translation.json",
-]);
-
-// Initial resources contain English and Bengali
+// Primary languages: English & Bangla
 const resources: Record<string, { translation: Record<string, unknown> }> = {
   en: { translation: enTranslation },
   bn: { translation: bnTranslation },
 };
 
-// Build supported languages list from static + lazy discovered locale paths
-const availableLocaleCodes = [
-  "en",
-  "bn",
-  ...Object.keys(lazyLocaleModules)
-    .map((path) => path.match(/\.\/locales\/(.+)\/translation\.json/)?.[1])
-    .filter((code): code is string => Boolean(code)),
-];
+// Supported languages list: Bangla & English
+const availableLocaleCodes = ["bn", "en"];
 
 // Build supported languages list from discovered locales + metadata
 export const SUPPORTED_LANGUAGES = availableLocaleCodes

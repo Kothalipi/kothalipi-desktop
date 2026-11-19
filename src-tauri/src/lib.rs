@@ -317,19 +317,29 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             .show_menu_on_left_click(false)
             .on_tray_icon_event(|tray, event| {
                 use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
-                let opens_window = matches!(
+                let double_click = matches!(
+                    event,
+                    TrayIconEvent::DoubleClick {
+                        button: MouseButton::Left,
+                        ..
+                    }
+                );
+                let left_click = matches!(
                     event,
                     TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
                         ..
-                    } | TrayIconEvent::DoubleClick {
-                        button: MouseButton::Left,
-                        ..
                     }
                 );
-                if opens_window {
+                if double_click {
                     show_main_window(tray.app_handle());
+                } else if left_click {
+                    crate::signal_handle::send_transcription_input(
+                        tray.app_handle(),
+                        "transcribe_bangla",
+                        "tray_click",
+                    );
                 }
             });
     }
@@ -340,6 +350,30 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     let tray = tray_builder
         .on_menu_event(|app, event| match event.id.as_ref() {
+            "start_transcribe_bangla" => {
+                crate::signal_handle::send_transcription_input(
+                    app,
+                    "transcribe_bangla",
+                    "tray_menu",
+                );
+            }
+            "start_transcribe_english" => {
+                crate::signal_handle::send_transcription_input(
+                    app,
+                    "transcribe_english",
+                    "tray_menu",
+                );
+            }
+            "start_transcribe_translate" => {
+                crate::signal_handle::send_transcription_input(
+                    app,
+                    "transcribe_with_post_process",
+                    "tray_menu",
+                );
+            }
+            "finish_transcription" => {
+                crate::signal_handle::send_transcription_input(app, "transcribe", "tray_menu");
+            }
             "settings" => {
                 show_main_window(app);
             }

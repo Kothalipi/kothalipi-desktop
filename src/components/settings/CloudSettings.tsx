@@ -1,7 +1,15 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowDown, ArrowUp, Check, Cpu, Cloud, Info, Sparkles } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  Cpu,
+  Cloud,
+  Info,
+  Sparkles,
+} from "lucide-react";
 import {
   commands,
   type CloudEngine,
