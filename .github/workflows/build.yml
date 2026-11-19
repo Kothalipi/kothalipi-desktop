@@ -466,6 +466,9 @@ jobs:
             value_var="S_$name"
             value="${!value_var}"
             if [[ -n "$value" ]]; then
+              if [[ "$name" == "TAURI_SIGNING_PRIVATE_KEY" ]]; then
+                value=$(echo "$value" | tr -d '\r\n ' | sed 's/%$//')
+              fi
               delim="EOF_$RANDOM$RANDOM"
               { echo "$name<<$delim"; echo "$value"; echo "$delim"; } >> "$GITHUB_ENV"
             fi
