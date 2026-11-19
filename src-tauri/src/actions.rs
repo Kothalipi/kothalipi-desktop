@@ -988,19 +988,22 @@ impl ShortcutAction for TranscribeAction {
                             }
                             // Smart Polish first (it fixes the text), then any AI
                             // post-processing prompt the user set up.
+                            // If translation to English was active, the text is already translated English.
                             let polished = match &polish_snapshot {
-                                Some(snapshot) => complete_unless_cancelled(
-                                    crate::polish::polish(
-                                        &ah,
-                                        snapshot,
-                                        &transcription,
-                                        Some(snapshot.selected_language.as_str()),
-                                    ),
-                                    || rm.was_cancelled_since(cancel_generation),
-                                )
-                                .await
-                                .flatten(),
-                                None => None,
+                                Some(snapshot) if !snapshot.translate_to_english => {
+                                    complete_unless_cancelled(
+                                        crate::polish::polish(
+                                            &ah,
+                                            snapshot,
+                                            &transcription,
+                                            Some(snapshot.selected_language.as_str()),
+                                        ),
+                                        || rm.was_cancelled_since(cancel_generation),
+                                    )
+                                    .await
+                                    .flatten()
+                                }
+                                _ => None,
                             };
                             let text_to_process = polished.as_deref().unwrap_or(&transcription);
                             let Some(mut processed) = complete_unless_cancelled(
@@ -1272,10 +1275,11 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         "transcribe_with_post_process".to_string(),
         Arc::new(TranscribeAction { post_process: true }) as Arc<dyn ShortcutAction>,
     );
-    // Kothalipi: one key per language.
+    // Kothalipi: one key per language, plus translate.
     for id in [
         crate::language_hotkeys::BANGLA_BINDING,
         crate::language_hotkeys::ENGLISH_BINDING,
+        crate::language_hotkeys::TRANSLATE_BINDING,
     ] {
         map.insert(
             id.to_string(),

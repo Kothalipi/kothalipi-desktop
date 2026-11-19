@@ -459,6 +459,77 @@ async fn openai(key: &str, model: &str, audio: &Audio, language: Option<&str>) -
         .map_err(|e| (FailureKind::BadResponse, e.to_string()).into())
 }
 
+/// Check if a text contains any Bengali (Bangla) characters.
+pub fn contains_bangla(text: &str) -> bool {
+    text.chars().any(|c| ('\u{0980}'..='\u{09FF}').contains(&c))
+}
+
+/// Translate spoken text to English using Gemini (or OpenAI if configured).
+pub async fn translate_to_english(
+    settings: &AppSettings,
+    text: &str,
+) -> Result<String, EngineError> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || (!contains_bangla(trimmed) && trimmed.is_ascii()) {
+        return Ok(trimmed.to_string());
+    }
+
+    let key = api_key(settings, &CloudProvider::Gemini);
+    if key.is_empty() {
+        return Err((
+            FailureKind::BadKey,
+            "No Gemini API key configured".to_string(),
+        )
+            .into());
+    }
+
+    let models = [
+        "gemini-flash-lite-latest",
+        "gemini-2.5-flash",
+        "gemini-flash-latest",
+    ];
+    let prompt = format!(
+        "Translate the following spoken Bangla text into natural, fluent, and accurate English. Output ONLY the translated English text, formatted with normal punctuation and proper capitalization. Do NOT add quotes, notes, or explanations.\n\nText: {trimmed}"
+    );
+
+    let body = serde_json::json!({
+        "contents": [{ "parts": [{ "text": prompt }] }],
+        "generationConfig": { "temperature": 0.0 }
+    });
+
+    let client = client()?;
+    for model in models {
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        );
+        let resp = client
+            .post(&url)
+            .header("x-goog-api-key", key)
+            .json(&body)
+            .send()
+            .await;
+
+        if let Ok(response) = resp {
+            let status = response.status();
+            if status.is_success() {
+                if let Ok(body_text) = response.text().await {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body_text) {
+                        if let Some(translated) = gemini_text(&json) {
+                            let clean = translated.trim();
+                            if !clean.is_empty() {
+                                info!("Translated Bangla to English via {model}: '{trimmed}' -> '{clean}'");
+                                return Ok(clean.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(trimmed.to_string())
+}
+
 /// Kothalipi's transcription entry point for a finished recording: cloud
 /// engines first when Cloud mode has any, then the offline model. When the
 /// offline model is missing too, raise the "pick a model" notice so the
@@ -477,10 +548,17 @@ pub async fn transcribe_recording(
             other => Some(other),
         };
         match transcribe(&settings, &samples, language).await {
-            Ok((text, provider)) => {
+            Ok((mut text, provider)) => {
                 crate::cloud_usage::record_success(app, &provider, samples.len() as f64 / 16_000.0);
                 // The live decoder (if any) isn't needed any more.
                 tm.cancel_stream();
+
+                if settings.translate_to_english && contains_bangla(&text) {
+                    if let Ok(translated) = translate_to_english(&settings, &text).await {
+                        text = translated;
+                    }
+                }
+
                 return Ok(crate::managers::transcription::Transcription {
                     text: text.split_whitespace().collect::<Vec<_>>().join(" "),
                     language: None,
@@ -509,7 +587,13 @@ pub async fn transcribe_recording(
             }
         }
     }
-    tm.transcribe_recording(samples)
+    let mut outcome = tm.transcribe_recording(samples)?;
+    if settings.translate_to_english && contains_bangla(&outcome.text) && cloud_ready(&settings) {
+        if let Ok(translated) = translate_to_english(&settings, &outcome.text).await {
+            outcome.text = translated;
+        }
+    }
+    Ok(outcome)
 }
 
 fn provider_label(p: &CloudProvider) -> &'static str {

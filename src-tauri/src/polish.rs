@@ -22,7 +22,7 @@ use crate::cloud_stt::{self, EngineFailure, FailureKind};
 use crate::settings::{AppSettings, CloudProvider};
 
 /// Google's alias for the newest fast Gemini; it keeps working as models are retired.
-pub const DEFAULT_MODEL: &str = "gemini-flash-latest";
+pub const DEFAULT_MODEL: &str = "gemini-flash-lite-latest";
 /// Typing must not wait long for a polish; past this the raw text is used.
 const TIMEOUT: Duration = Duration::from_secs(10);
 

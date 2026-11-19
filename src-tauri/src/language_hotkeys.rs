@@ -17,11 +17,13 @@ use crate::settings::AppSettings;
 
 pub const BANGLA_BINDING: &str = "transcribe_bangla";
 pub const ENGLISH_BINDING: &str = "transcribe_english";
+pub const TRANSLATE_BINDING: &str = "transcribe_translate";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LanguageKey {
     Bangla,
     English,
+    Translate,
 }
 
 impl LanguageKey {
@@ -29,6 +31,7 @@ impl LanguageKey {
         match binding_id {
             BANGLA_BINDING => Some(Self::Bangla),
             ENGLISH_BINDING => Some(Self::English),
+            TRANSLATE_BINDING => Some(Self::Translate),
             _ => None,
         }
     }
@@ -37,6 +40,7 @@ impl LanguageKey {
         match self {
             Self::Bangla => "bn",
             Self::English => "en",
+            Self::Translate => "en",
         }
     }
 }
@@ -83,7 +87,15 @@ pub fn apply(mut settings: AppSettings) -> AppSettings {
 
 fn overlay(settings: &mut AppSettings, session: &Session) {
     settings.selected_language = session.key.language().to_string();
-    settings.translate_to_english = false;
+    match session.key {
+        LanguageKey::Bangla => {
+            settings.translate_to_english = false;
+        }
+        LanguageKey::English | LanguageKey::Translate => {
+            // Dictating with English or Translate key forces output to English
+            settings.translate_to_english = true;
+        }
+    }
     if let Some(model) = &session.model {
         settings.selected_model = model.clone();
     }
@@ -106,8 +118,8 @@ fn pick_model(app: &AppHandle, key: LanguageKey) -> Option<String> {
         LanguageKey::Bangla => crate::kothalipi_models::bangla_model_ids()
             .find(|id| hears(id, "bn"))
             .map(str::to_string),
-        LanguageKey::English if hears(&selected, "en") => None,
-        LanguageKey::English => models
+        LanguageKey::English | LanguageKey::Translate if hears(&selected, "en") => None,
+        LanguageKey::English | LanguageKey::Translate => models
             .get_available_models()
             .into_iter()
             .find(|m| m.is_downloaded && m.supported_languages.iter().any(|l| l == "en"))
@@ -128,6 +140,10 @@ mod tests {
         assert_eq!(
             LanguageKey::for_binding(ENGLISH_BINDING),
             Some(LanguageKey::English)
+        );
+        assert_eq!(
+            LanguageKey::for_binding(TRANSLATE_BINDING),
+            Some(LanguageKey::Translate)
         );
         assert_eq!(LanguageKey::for_binding("transcribe"), None);
     }

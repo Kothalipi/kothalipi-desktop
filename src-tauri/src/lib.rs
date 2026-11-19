@@ -367,7 +367,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "start_transcribe_translate" => {
                 crate::signal_handle::send_transcription_input(
                     app,
-                    "transcribe_with_post_process",
+                    crate::language_hotkeys::TRANSLATE_BINDING,
                     "tray_menu",
                 );
             }
