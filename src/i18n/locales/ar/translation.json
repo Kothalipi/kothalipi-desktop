@@ -1056,6 +1056,20 @@
           "description": "After typing, Gemini fixes Bangla spelling, adds । ? and commas, and removes filler sounds. It sends the text (never audio) to Google with your own key and adds about a second. Off by default.",
           "needKey": "Needs a Google Gemini key. Add one under Cloud engines above, then turn this on."
         }
+      },
+      "status": {
+        "activeEngine": "Active Engine:",
+        "localOffline": "Local Model (100% Offline)",
+        "cloudApi": "{{provider}} (Cloud API)",
+        "cloudFallback": "Cloud Mode (Falling back to Local Model)",
+        "voiceModel": "Current Voice Model: {{name}} • Zero internet, 100% private",
+        "connectedApi": "Connected API: {{provider}} (Model: {{model}})",
+        "noKeyFallback": "No API keys set yet. Dictation automatically uses your local model ({{name}}).",
+        "badgeOnDevice": "On-Device",
+        "badgeApiActive": "API Active",
+        "badgeKeyNeeded": "Key Needed",
+        "priority": "Priority:",
+        "postProcessActive": "AI Voice Translation: {{prompt}} (Post-Processing)"
       }
     }
   },

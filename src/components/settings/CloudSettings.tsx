@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowDown, ArrowUp, Check } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Cpu, Cloud, Info, Sparkles } from "lucide-react";
 import {
   commands,
   type CloudEngine,
@@ -9,6 +9,7 @@ import {
   type ListenMode,
 } from "@/bindings";
 import { useSettings } from "../../hooks/useSettings";
+import { useModelStore } from "../../stores/modelStore";
 import { Button } from "../ui/Button";
 import { Dropdown } from "../ui/Dropdown";
 import { Input } from "../ui/Input";
@@ -179,9 +180,23 @@ export const CloudSettings: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, refreshSettings, isUpdating } =
     useSettings();
+  const { currentModel, models } = useModelStore();
   const mode: ListenMode = getSetting("listen_mode") ?? "offline";
   const engines = getSetting("cloud_engines") ?? [];
   const keys = getSetting("cloud_api_keys") ?? {};
+
+  const currentModelInfo = models.find((m) => m.id === currentModel);
+  const enabledEnginesWithKey = engines.filter(
+    (e) => e.enabled && Boolean(keys[e.provider]),
+  );
+  const activeCloudEngine = enabledEnginesWithKey[0];
+
+  const postProcessEnabled = getSetting("post_process_enabled") ?? false;
+  const postProcessPromptId = getSetting("post_process_selected_prompt_id");
+  const postProcessPrompts = getSetting("post_process_prompts") ?? [];
+  const activePrompt = postProcessPrompts.find(
+    (p) => p.id === postProcessPromptId,
+  );
 
   const saveEngines = async (next: CloudEngine[]) => {
     await commands.changeCloudEnginesSetting(next);
@@ -206,6 +221,132 @@ export const CloudSettings: React.FC = () => {
           disabled={isUpdating("listen_mode")}
         />
       </SettingContainer>
+
+      {/* Active Engine & Model Live Status Card */}
+      <div className="mx-4 my-2 p-3.5 rounded-lg border border-line bg-surface/40 flex flex-col gap-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            {mode === "offline" ? (
+              <div className="mt-0.5 p-1.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <Cpu size={16} />
+              </div>
+            ) : (
+              <div className="mt-0.5 p-1.5 rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                <Cloud size={16} />
+              </div>
+            )}
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-text/90">
+                  {t("settings.kothalipi.status.activeEngine")}
+                </span>
+                {mode === "offline" ? (
+                  <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    {t("settings.kothalipi.status.localOffline")}
+                  </span>
+                ) : activeCloudEngine ? (
+                  <span className="text-xs font-medium text-sky-600 dark:text-sky-400">
+                    {t("settings.kothalipi.status.cloudApi", {
+                      provider: t(
+                        `settings.kothalipi.cloud.providers.${activeCloudEngine.provider}`,
+                      ),
+                    })}
+                  </span>
+                ) : (
+                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    {t("settings.kothalipi.status.cloudFallback")}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-text/70 mt-0.5">
+                {mode === "offline" ? (
+                  <span>
+                    {t("settings.kothalipi.status.voiceModel", {
+                      name: currentModelInfo?.name || "Qwen3-ASR 0.6B Bangla",
+                    })}
+                  </span>
+                ) : activeCloudEngine ? (
+                  <span>
+                    {t("settings.kothalipi.status.connectedApi", {
+                      provider: t(
+                        `settings.kothalipi.cloud.providers.${activeCloudEngine.provider}`,
+                      ),
+                      model: activeCloudEngine.model,
+                    })}
+                  </span>
+                ) : (
+                  <span>
+                    {t("settings.kothalipi.status.noKeyFallback", {
+                      name: currentModelInfo?.name || "Offline Model",
+                    })}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="shrink-0">
+            {mode === "offline" ? (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium border border-emerald-500/20">
+                {t("settings.kothalipi.status.badgeOnDevice")}
+              </span>
+            ) : activeCloudEngine ? (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-medium border border-sky-500/20">
+                {t("settings.kothalipi.status.badgeApiActive")}
+              </span>
+            ) : (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium border border-amber-500/20">
+                {t("settings.kothalipi.status.badgeKeyNeeded")}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Fallback chain visual in Cloud mode */}
+        {mode === "cloud" && (
+          <div className="flex items-center gap-1.5 text-[11px] text-text/60 pt-2 border-t border-line/40">
+            <span className="font-medium text-text/75">
+              {t("settings.kothalipi.status.priority")}
+            </span>
+            <span
+              className={`px-1.5 py-0.5 rounded ${
+                keys.gemini
+                  ? "bg-text/10 text-text font-medium"
+                  : "opacity-40 line-through"
+              }`}
+            >
+              1. {t("settings.kothalipi.cloud.providers.gemini")}
+            </span>
+            <span>→</span>
+            <span
+              className={`px-1.5 py-0.5 rounded ${
+                keys.openai
+                  ? "bg-text/10 text-text font-medium"
+                  : "opacity-40 line-through"
+              }`}
+            >
+              2. {t("settings.kothalipi.cloud.providers.openai")}
+            </span>
+            <span>→</span>
+            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+              3. {t("settings.kothalipi.mode.offline")}
+            </span>
+          </div>
+        )}
+
+        {/* AI Translation / Post-Processing indicator if enabled */}
+        {postProcessEnabled && (
+          <div className="flex items-center gap-1.5 text-xs text-purple-600 dark:text-purple-400 pt-2 border-t border-line/40">
+            <Sparkles size={13} className="shrink-0" />
+            <span>
+              {t("settings.kothalipi.status.postProcessActive", {
+                prompt: activePrompt?.name || "Active",
+              })}
+            </span>
+          </div>
+        )}
+      </div>
+
       {mode === "cloud" &&
         engines.map((engine, i) => (
           <EngineRow
@@ -224,6 +365,15 @@ export const CloudSettings: React.FC = () => {
             }}
           />
         ))}
+
+      {/* Claude explanation note in Cloud mode */}
+      {mode === "cloud" && (
+        <div className="mx-4 my-1.5 flex items-start gap-2 rounded-md bg-surface/30 px-3 py-2 text-xs text-text/70 border border-line/50">
+          <Info size={14} className="mt-0.5 shrink-0 text-text/50" />
+          <span>{t("onboarding.kothalipi.cloud.claudeNote")}</span>
+        </div>
+      )}
+
       <SmartPolish hasGeminiKey={Boolean(keys.gemini)} />
       {mode === "cloud" && (
         <CloudUsagePanel providers={engines.map((e) => e.provider)} />
