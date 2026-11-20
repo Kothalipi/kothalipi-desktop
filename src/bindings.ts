@@ -467,9 +467,6 @@ async changeCloudApiKeySetting(provider: CloudProvider, apiKey: string) : Promis
 /**
  * Kothalipi: check a cloud key works, without saving it.
  */
-async getCloudUsage() : Promise<CloudUsage> {
-    return await TAURI_INVOKE("get_cloud_usage");
-},
 async checkCloudApiKey(provider: CloudProvider, apiKey: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("check_cloud_api_key", { provider, apiKey }) };
@@ -553,9 +550,9 @@ async changeKeyboardImplementationSetting(implementation: string) : Promise<Resu
 async getKeyboardImplementation() : Promise<string> {
     return await TAURI_INVOKE("get_keyboard_implementation");
 },
-async changeSmartPolishSetting(enabled: boolean) : Promise<Result<null, string>> {
+async changeShowTrayIconSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("change_smart_polish_setting", { enabled }) };
+    return { status: "ok", data: await TAURI_INVOKE("change_show_tray_icon_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -569,13 +566,16 @@ async changeShowDockIconSetting(enabled: boolean) : Promise<Result<null, string>
     else return { status: "error", error: e  as any };
 }
 },
-async changeShowTrayIconSetting(enabled: boolean) : Promise<Result<null, string>> {
+async changeSmartPolishSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("change_show_tray_icon_setting", { enabled }) };
+    return { status: "ok", data: await TAURI_INVOKE("change_smart_polish_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getCloudUsage() : Promise<CloudUsage> {
+    return await TAURI_INVOKE("get_cloud_usage");
 },
 async changeTranscribeAcceleratorSetting(accelerator: TranscribeAcceleratorSetting) : Promise<Result<null, string>> {
     try {
@@ -1233,7 +1233,20 @@ spoken_languages?: string[]; overlay_position?: OverlayPosition; debug_mode?: bo
  * Mac while recording, so its microphone does not return silence while
  * another Apple device is playing through it.
  */
-airpods_mode?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; show_dock_icon?: boolean; smart_polish?: boolean; smart_polish_model?: string; paste_delay_ms?: number; paste_delay_after_ms?: number; 
+airpods_mode?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; 
+/**
+ * macOS: also show Kothalipi in the Dock while its window is open. Off by
+ * default, so the app lives in the menu bar only.
+ */
+show_dock_icon?: boolean; 
+/**
+ * Kothalipi Smart Polish: Gemini cleans up the text after transcription.
+ */
+smart_polish?: boolean; 
+/**
+ * Gemini model used for it (empty = the default alias).
+ */
+smart_polish_model?: string; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -1327,9 +1340,11 @@ export type CloudEngine = { provider: CloudProvider; model: string; enabled: boo
  * Kothalipi: a cloud speech-to-text provider.
  */
 export type CloudProvider = "gemini" | "openai"
-export type CloudUsage = { day: string; providers: Partial<{ [key in string]: ProviderUsage }>; limits: Partial<{ [key in string]: LimitHit }> }
-export type LimitHit = { scope: string; limit: number | null; message: string; hit_at: number; retry_after_secs: number | null }
-export type ProviderUsage = { requests: number; ok: number; failed: number; audio_secs: number }
+export type CloudUsage = { 
+/**
+ * Local calendar day these counts belong to (YYYY-MM-DD).
+ */
+day: string; providers: Partial<{ [key in string]: ProviderUsage }>; limits: Partial<{ [key in string]: LimitHit }> }
 export type CustomSounds = { start: boolean; stop: boolean }
 export type DeviceProfile = { os: string; arch: string; 
 /**
@@ -1448,6 +1463,11 @@ export type LanguageStatus =
  * Auto can't work here; `language` is used instead.
  */
 { kind: "auto_unavailable"; language: string; reason: AutoUnavailableReason }
+export type LimitHit = { scope: string; limit: number | null; message: string; 
+/**
+ * Unix seconds when it happened.
+ */
+hit_at: number; retry_after_secs: number | null }
 /**
  * Kothalipi: how speech becomes text.
  */
@@ -1550,6 +1570,7 @@ export type PostProcessApiFormat =
  */
 "anthropic"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean; api_format?: PostProcessApiFormat }
+export type ProviderUsage = { requests: number; ok: number; failed: number; audio_secs: number }
 /**
  * Recording phase events for windows that follow along (onboarding's Try it).
  */
