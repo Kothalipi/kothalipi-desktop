@@ -97,35 +97,9 @@ i18n.use(initReactI18next).init({
 });
 
 // Dynamically load language bundle on demand if not already loaded
-export const ensureLanguageLoaded = async (langCode: string) => {
-  if (i18n.hasResourceBundle(langCode, "translation")) {
-    return;
-  }
-  const matchPath = Object.keys(lazyLocaleModules).find(
-    (p) =>
-      p.toLowerCase() ===
-      `./locales/${langCode.toLowerCase()}/translation.json`,
-  );
-  if (matchPath) {
-    const loader = lazyLocaleModules[matchPath];
-    if (loader) {
-      try {
-        const module = await loader();
-        i18n.addResourceBundle(
-          langCode,
-          "translation",
-          module.default,
-          true,
-          true,
-        );
-      } catch (err) {
-        console.error(
-          `Failed to load translation bundle for ${langCode}:`,
-          err,
-        );
-      }
-    }
-  }
+export const ensureLanguageLoaded = async (_langCode: string) => {
+  // Primary languages (bn, en) are eagerly loaded
+  return;
 };
 
 // Wrap changeLanguage to ensure translations are loaded before switching
