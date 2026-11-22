@@ -1,6 +1,6 @@
 [package]
 name = "kothalipi"
-version = "0.1.7"
+version = "0.1.8"
 description = "Kothalipi"
 authors = ["TA Shanto"]
 edition = "2021"
