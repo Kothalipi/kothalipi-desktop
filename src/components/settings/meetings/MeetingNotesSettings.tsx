@@ -31,11 +31,7 @@ const noteToMarkdown = (note: MeetingNote) => {
     parts.push("## Summary", note.summary, "");
   }
   if (note.key_points.length > 0) {
-    parts.push(
-      "## Key Points",
-      ...note.key_points.map((p) => `- ${p}`),
-      "",
-    );
+    parts.push("## Key Points", ...note.key_points.map((p) => `- ${p}`), "");
   }
   if (note.action_items.length > 0) {
     parts.push(

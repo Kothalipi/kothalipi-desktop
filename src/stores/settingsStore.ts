@@ -145,8 +145,7 @@ const settingUpdaters: {
     commands.changeAppAwareToneSetting(value as boolean),
   vibe_coding_mode: (value) =>
     commands.changeVibeCodingModeSetting(value as boolean),
-  voice_snippets: (value) =>
-    commands.changeVoiceSnippetsSetting(value as any),
+  voice_snippets: (value) => commands.changeVoiceSnippetsSetting(value as any),
   selected_language: (value) =>
     commands.changeSelectedLanguageSetting(value as string),
   overlay_position: (value) =>

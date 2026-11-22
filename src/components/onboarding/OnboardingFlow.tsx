@@ -11,12 +11,7 @@ import {
 import { usePermissions } from "./usePermissions";
 import { Permissions } from "./screens/Permissions";
 import { TryIt } from "./screens/TryIt";
-import {
-  CloudKeys,
-  Keys,
-  Listen,
-  Voices,
-} from "./screens/KothalipiSetup";
+import { CloudKeys, Keys, Listen, Voices } from "./screens/KothalipiSetup";
 import { useOsType } from "@/hooks/useOsType";
 import { useOnboardingModels } from "./useOnboardingModels";
 import { useModelStore } from "@/stores/modelStore";
