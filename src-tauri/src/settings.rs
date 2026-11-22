@@ -505,6 +505,17 @@ pub struct AppSettings {
     /// terms in proper English letters (Banglish code-switching). On by default.
     #[serde(default = "default_bangla_mixed_english")]
     pub bangla_mixed_english: bool,
+    /// Kothalipi: adapt dictation tone & formatting to the active app
+    /// (Chat = casual, Email = formal, IDE/Terminal = Vibe Coding).
+    #[serde(default = "default_app_aware_tone")]
+    pub app_aware_tone: bool,
+    /// Kothalipi: always convert Bangla/Banglish speech into crisp English
+    /// developer prompts (Vibe Coding mode) regardless of active app.
+    #[serde(default)]
+    pub vibe_coding_mode: bool,
+    /// Kothalipi: spoken voice snippets ("আমার ইমেইল" -> "name@example.com").
+    #[serde(default)]
+    pub voice_snippets: Vec<VoiceSnippet>,
     #[serde(default = "default_selected_language")]
     pub selected_language: String,
     /// Every language the person dictates in (codes, e.g. ["en", "zh"]),
@@ -663,11 +674,22 @@ fn default_always_on_microphone() -> bool {
     false
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct VoiceSnippet {
+    pub id: String,
+    pub trigger: String,
+    pub expansion: String,
+}
+
 fn default_translate_to_english() -> bool {
     false
 }
 
 fn default_bangla_mixed_english() -> bool {
+    true
+}
+
+fn default_app_aware_tone() -> bool {
     true
 }
 
@@ -1152,6 +1174,9 @@ pub fn get_default_settings() -> AppSettings {
         selected_output_device: None,
         translate_to_english: false,
         bangla_mixed_english: default_bangla_mixed_english(),
+        app_aware_tone: default_app_aware_tone(),
+        vibe_coding_mode: false,
+        voice_snippets: Vec::new(),
         selected_language: "auto".to_string(),
         overlay_position: default_overlay_position(),
         debug_mode: false,

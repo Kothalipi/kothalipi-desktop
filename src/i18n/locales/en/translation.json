@@ -22,6 +22,7 @@
     "advanced": "Advanced",
     "postProcessing": "Post Process",
     "history": "History",
+    "meetings": "Meeting Notes",
     "debug": "Debug",
     "about": "About"
   },
@@ -1092,8 +1093,44 @@
           "localReady": "Offline translation is active using {{model}}. Add a Gemini API key above for faster, more natural translation.",
           "needGemini": "Add a free Google Gemini API key above to translate Bangla speech directly to English.",
           "needEngine": "Add a free Google Gemini API key above for instant translation, or download Whisper Large v3 for 100% offline translation."
+        },
+        "appAwareTone": {
+          "label": "App-Aware Tone & Formatting",
+          "description": "Automatically adapts tone to the active app: casual Banglish in WhatsApp/Messenger/Slack, formal & polished in Mail/Outlook/Docs, and Vibe Coding prompt format in Cursor/VS Code/Terminal."
+        },
+        "vibeCoding": {
+          "label": "Vibe Coding Mode (Always On)",
+          "description": "Speak in Bangla or Banglish and automatically output crisp, structured English developer prompts ready for Cursor, Claude Code, or VS Code."
+        }
+      },
+      "dictionarySnippets": {
+        "title": "Personal Dictionary & Voice Snippets",
+        "snippets": {
+          "title": "Voice Snippets (Quick Triggers)",
+          "description": "Say a short trigger phrase in Bangla or English (e.g. \"আমার ইমেইল\" or \"meeting link\") to instantly paste your full email, address, or link.",
+          "triggerPlaceholder": "Spoken trigger (e.g. আমার ইমেইল)",
+          "expansionPlaceholder": "Text to paste (e.g. name@example.com)",
+          "add": "Add",
+          "remove": "Remove snippet"
         }
       }
+    },
+    "meetings": {
+      "title": "Bot-free Meeting Notes",
+      "subtitle": "Record Bangla-English Zoom, Google Meet, or in-person meetings without any bot joining your call. Get an AI summary, key points, and action items.",
+      "titlePlaceholder": "Meeting title (optional)",
+      "startRecording": "Start Meeting Recording",
+      "stopAndSummarize": "Stop & Summarize",
+      "summarizing": "Transcribing & generating summary...",
+      "empty": "No meeting notes yet. Click \"Start Meeting Recording\" to capture your first Bangla-English meeting.",
+      "copy": "Copy Markdown",
+      "copied": "Copied",
+      "copyFailed": "Failed to copy meeting note",
+      "delete": "Delete meeting note",
+      "keyPoints": "Key Discussion Points",
+      "actionItems": "Action Items",
+      "showTranscript": "Show full transcript",
+      "hideTranscript": "Hide transcript"
     }
   },
   "footer": {

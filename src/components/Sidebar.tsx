@@ -1,6 +1,14 @@
 import React, { lazy } from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, FlaskConical, History, Info, Sparkles, Cpu } from "lucide-react";
+import {
+  Cog,
+  FlaskConical,
+  History,
+  Info,
+  NotebookPen,
+  Sparkles,
+  Cpu,
+} from "lucide-react";
 import KothalipiLogo from "./icons/KothalipiLogo";
 import KothalipiMark from "./icons/KothalipiMark";
 import { useSettings } from "../hooks/useSettings";
@@ -10,6 +18,11 @@ import { GeneralSettings } from "./settings/general/GeneralSettings";
 const HistorySettings = lazy(() =>
   import("./settings/history/HistorySettings").then((m) => ({
     default: m.HistorySettings,
+  })),
+);
+const MeetingNotesSettings = lazy(() =>
+  import("./settings/meetings/MeetingNotesSettings").then((m) => ({
+    default: m.MeetingNotesSettings,
   })),
 );
 const ModelsSettings = lazy(() =>
@@ -62,6 +75,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.history",
     icon: History,
     component: HistorySettings,
+    enabled: () => true,
+  },
+  meetings: {
+    labelKey: "sidebar.meetings",
+    icon: NotebookPen,
+    component: MeetingNotesSettings,
     enabled: () => true,
   },
   models: {

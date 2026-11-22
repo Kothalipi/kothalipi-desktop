@@ -903,10 +903,18 @@ impl ShortcutAction for TranscribeAction {
                     // language can't change what this one uses (settings are
                     // read here, once).
                     let settings_snapshot = crate::language_hotkeys::session_settings(&ah);
-                    // Kothalipi Smart Polish reads the same snapshot, so it uses
-                    // this recording's language even if the next one has begun.
-                    let polish_snapshot = crate::polish::enabled(&settings_snapshot)
-                        .then(|| settings_snapshot.clone());
+                    // Detect frontmost app for App-Aware Tone & Vibe Coding mode.
+                    let active_app = if settings_snapshot.app_aware_tone {
+                        crate::app_context::detect_frontmost_app()
+                    } else {
+                        None
+                    };
+                    let app_category = active_app.as_ref().map(|a| a.category);
+                    // Kothalipi Smart Polish / App-Aware Tone / Vibe Coding reads the same snapshot.
+                    let polish_snapshot =
+                        crate::polish::should_run(&settings_snapshot, app_category)
+                            .then(|| settings_snapshot.clone());
+                    let voice_snippets = settings_snapshot.voice_snippets.clone();
                     if crate::cloud_stt::cloud_ready(&settings_snapshot) {
                         guard.release_early();
                     }
@@ -997,6 +1005,7 @@ impl ShortcutAction for TranscribeAction {
                                             snapshot,
                                             &transcription,
                                             Some(snapshot.selected_language.as_str()),
+                                            app_category,
                                         ),
                                         || rm.was_cancelled_since(cancel_generation),
                                     )
@@ -1006,8 +1015,12 @@ impl ShortcutAction for TranscribeAction {
                                 _ => None,
                             };
                             let text_to_process = polished.as_deref().unwrap_or(&transcription);
+                            let snippet_expanded = crate::snippets::apply_voice_snippets(
+                                text_to_process,
+                                &voice_snippets,
+                            );
                             let Some(mut processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, text_to_process, post_process),
+                                process_transcription_output(&ah, &snippet_expanded, post_process),
                                 || rm.was_cancelled_since(cancel_generation),
                             )
                             .await

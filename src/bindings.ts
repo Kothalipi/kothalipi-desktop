@@ -101,6 +101,70 @@ async changeBanglaMixedEnglishSetting(enabled: boolean) : Promise<Result<null, s
     else return { status: "error", error: e  as any };
 }
 },
+async changeAppAwareToneSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_app_aware_tone_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeVibeCodingModeSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_vibe_coding_mode_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeVoiceSnippetsSetting(snippets: VoiceSnippet[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_voice_snippets_setting", { snippets }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async startMeetingRecording() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_meeting_recording") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelMeetingRecording() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_meeting_recording") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async stopAndSummarizeMeeting(title: string | null, durationSecs: number) : Promise<Result<MeetingNote, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_and_summarize_meeting", { title, durationSecs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getMeetingNotes() : Promise<Result<MeetingNote[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_meeting_notes") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteMeetingNote(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_meeting_note", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeSelectedLanguageSetting(language: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_selected_language_setting", { language }) };
@@ -1235,7 +1299,7 @@ selected_channel?: number | null; clamshell_microphone?: string | null; selected
  * Kothalipi: when dictating Bangla, keep spoken English words and technical
  * terms in proper English letters (Banglish code-switching). On by default.
  */
-bangla_mixed_english?: boolean; selected_language?: string; 
+bangla_mixed_english?: boolean; app_aware_tone?: boolean; vibe_coding_mode?: boolean; voice_snippets?: VoiceSnippet[]; selected_language?: string; 
 /**
  * Every language the person dictates in (codes, e.g. ["en", "zh"]),
  * picked during onboarding. Empty until then.
@@ -1662,6 +1726,8 @@ export type ShortcutActivation =
  * (`hold_threshold_ms`).
  */
 "hold_or_toggle"
+export type VoiceSnippet = { id: string; trigger: string; expansion: string }
+export type MeetingNote = { id: string; title: string; created_at: number; duration_secs: number; transcript: string; summary: string; key_points: string[]; action_items: string[] }
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**

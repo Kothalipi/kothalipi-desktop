@@ -8,10 +8,12 @@ import { useModelStore } from "../../stores/modelStore";
 import type { ModelInfo } from "@/bindings";
 
 /**
- * Unified Kothalipi Bangla & Translation settings:
+ * Unified Kothalipi Bangla & AI Intelligence settings:
  * 1. Keep English words in English when speaking Bangla (default ON)
  * 2. Translate Bangla speech to English (works with Gemini API or offline Whisper)
- * 3. Smart Polish (Gemini punctuation & spelling cleanup)
+ * 3. App-Aware Tone & Formatting (Chat = casual, Email = formal, IDE = Vibe Coding)
+ * 4. Context-Aware Vibe Coding Mode (Bangla/Banglish -> English developer prompts)
+ * 5. Smart Polish (Gemini punctuation & spelling cleanup)
  */
 export const BanglaSpeechSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -24,6 +26,8 @@ export const BanglaSpeechSettings: React.FC = () => {
 
   const banglaMixedEnglish = getSetting("bangla_mixed_english") ?? true;
   const translateToEnglish = getSetting("translate_to_english") ?? false;
+  const appAwareTone = getSetting("app_aware_tone") ?? true;
+  const vibeCodingMode = getSetting("vibe_coding_mode") ?? false;
   const smartPolish = getSetting("smart_polish") ?? false;
 
   const currentModelInfo = models.find((m: ModelInfo) => m.id === currentModel);
@@ -100,7 +104,39 @@ export const BanglaSpeechSettings: React.FC = () => {
         )}
       </div>
 
-      {/* 3. Smart Polish */}
+      {/* 3. App-Aware Tone & Formatting */}
+      <ToggleSwitch
+        checked={appAwareTone}
+        onChange={(enabled) => updateSetting("app_aware_tone", enabled)}
+        isUpdating={isUpdating("app_aware_tone")}
+        disabled={!hasGeminiKey}
+        label={t("settings.kothalipi.banglaSpeech.appAwareTone.label")}
+        description={t(
+          hasGeminiKey
+            ? "settings.kothalipi.banglaSpeech.appAwareTone.description"
+            : "settings.kothalipi.cloud.polish.needKey",
+        )}
+        descriptionMode="tooltip"
+        grouped={true}
+      />
+
+      {/* 4. Vibe Coding Mode */}
+      <ToggleSwitch
+        checked={vibeCodingMode}
+        onChange={(enabled) => updateSetting("vibe_coding_mode", enabled)}
+        isUpdating={isUpdating("vibe_coding_mode")}
+        disabled={!hasGeminiKey}
+        label={t("settings.kothalipi.banglaSpeech.vibeCoding.label")}
+        description={t(
+          hasGeminiKey
+            ? "settings.kothalipi.banglaSpeech.vibeCoding.description"
+            : "settings.kothalipi.cloud.polish.needKey",
+        )}
+        descriptionMode="tooltip"
+        grouped={true}
+      />
+
+      {/* 5. Smart Polish */}
       <ToggleSwitch
         checked={smartPolish}
         onChange={(enabled) => updateSetting("smart_polish", enabled)}

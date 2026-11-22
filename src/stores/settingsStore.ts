@@ -141,6 +141,12 @@ const settingUpdaters: {
     commands.changeTranslateToEnglishSetting(value as boolean),
   bangla_mixed_english: (value) =>
     commands.changeBanglaMixedEnglishSetting(value as boolean),
+  app_aware_tone: (value) =>
+    commands.changeAppAwareToneSetting(value as boolean),
+  vibe_coding_mode: (value) =>
+    commands.changeVibeCodingModeSetting(value as boolean),
+  voice_snippets: (value) =>
+    commands.changeVoiceSnippetsSetting(value as any),
   selected_language: (value) =>
     commands.changeSelectedLanguageSetting(value as string),
   overlay_position: (value) =>

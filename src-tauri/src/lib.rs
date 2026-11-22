@@ -1,4 +1,5 @@
 mod actions;
+mod app_context;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -24,6 +25,7 @@ mod language_hotkeys;
 mod languages;
 mod llm_client;
 mod managers;
+mod meeting_notes;
 mod memory;
 mod notices;
 mod overlay;
@@ -36,6 +38,7 @@ mod secure_input;
 mod settings;
 mod shortcut;
 mod signal_handle;
+mod snippets;
 mod system_languages;
 mod transcription_coordinator;
 mod transcription_hook;
@@ -780,6 +783,14 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_autostart_setting,
             shortcut::change_translate_to_english_setting,
             shortcut::change_bangla_mixed_english_setting,
+            shortcut::change_app_aware_tone_setting,
+            shortcut::change_vibe_coding_mode_setting,
+            shortcut::change_voice_snippets_setting,
+            meeting_notes::start_meeting_recording,
+            meeting_notes::cancel_meeting_recording,
+            meeting_notes::stop_and_summarize_meeting,
+            meeting_notes::get_meeting_notes,
+            meeting_notes::delete_meeting_note,
             shortcut::change_selected_language_setting,
             shortcut::change_spoken_languages_setting,
             shortcut::change_overlay_position_setting,
