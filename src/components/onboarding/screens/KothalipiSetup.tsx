@@ -38,6 +38,7 @@ export const findEnglishModel = (models: ModelInfo[]) =>
   ) ?? models.find((m) => m.id === "small");
 
 const GEMINI_KEY_URL = "https://aistudio.google.com/apikey";
+const GROQ_KEY_URL = "https://console.groq.com/keys";
 const OPENAI_KEY_URL = "https://platform.openai.com/api-keys";
 
 const card =
@@ -214,10 +215,12 @@ export const CloudKeys: React.FC<{
   const saved = getSetting("cloud_api_keys") ?? {};
   const [state, setState] = useState<Record<CloudProvider, KeyState>>({
     gemini: saved.gemini ? "ok" : "idle",
+    groq: saved.groq ? "ok" : "idle",
     openai: saved.openai ? "ok" : "idle",
   });
   const [errors, setErrors] = useState<Record<CloudProvider, string>>({
     gemini: "",
+    groq: "",
     openai: "",
   });
 
@@ -234,7 +237,7 @@ export const CloudKeys: React.FC<{
     }
   };
 
-  const anyOk = state.gemini === "ok" || state.openai === "ok";
+  const anyOk = state.gemini === "ok" || state.groq === "ok" || state.openai === "ok";
 
   return (
     <OnboardingShell
@@ -270,6 +273,16 @@ export const CloudKeys: React.FC<{
             state={state.gemini}
             error={errors.gemini}
             onCheck={(k) => check("gemini", k)}
+          />
+          <KeyRow
+            provider="groq"
+            name="Groq Whisper (Free, Ultra-Fast)"
+            note="Free tier with whisper-large-v3-turbo — great backup when Gemini hits quota."
+            getLabel={t("onboarding.kothalipi.cloud.getFreeKey")}
+            url={GROQ_KEY_URL}
+            state={state.groq}
+            error={errors.groq}
+            onCheck={(k) => check("groq", k)}
           />
           <KeyRow
             provider="openai"

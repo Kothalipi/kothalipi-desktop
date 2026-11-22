@@ -523,6 +523,7 @@
         },
         "providers": {
           "gemini": "Google Gemini",
+          "groq": "Groq Whisper (ফ্রি, সুপার ফাস্ট)",
           "openai": "OpenAI (ChatGPT)"
         }
       },

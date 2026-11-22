@@ -1051,6 +1051,7 @@
       "cloud": {
         "providers": {
           "gemini": "Google Gemini",
+          "groq": "Groq Whisper (Free, Ultra-Fast)",
           "openai": "OpenAI (ChatGPT)"
         },
         "rowDescription": "Tried in this order. A failure moves on to the next engine, then to offline.",

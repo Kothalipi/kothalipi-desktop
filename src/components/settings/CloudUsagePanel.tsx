@@ -9,6 +9,7 @@ import { SettingContainer } from "../ui/SettingContainer";
 
 const USAGE_URLS: Record<CloudProvider, string> = {
   gemini: "https://aistudio.google.com/usage",
+  groq: "https://console.groq.com/settings/limits",
   openai: "https://platform.openai.com/usage",
 };
 

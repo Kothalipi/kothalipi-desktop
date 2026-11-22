@@ -226,6 +226,7 @@ pub enum ListenMode {
 #[serde(rename_all = "snake_case")]
 pub enum CloudProvider {
     Gemini,
+    Groq,
     #[serde(rename = "openai")]
     OpenAi,
 }
@@ -243,6 +244,11 @@ pub fn default_cloud_engines() -> Vec<CloudEngine> {
         CloudEngine {
             provider: CloudProvider::Gemini,
             model: crate::cloud_stt::GEMINI_DEFAULT_MODEL.to_string(),
+            enabled: true,
+        },
+        CloudEngine {
+            provider: CloudProvider::Groq,
+            model: crate::cloud_stt::GROQ_DEFAULT_MODEL.to_string(),
             enabled: true,
         },
         CloudEngine {

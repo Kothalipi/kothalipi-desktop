@@ -1432,7 +1432,7 @@ export type CloudEngine = { provider: CloudProvider; model: string; enabled: boo
 /**
  * Kothalipi: a cloud speech-to-text provider.
  */
-export type CloudProvider = "gemini" | "openai"
+export type CloudProvider = "gemini" | "groq" | "openai"
 export type CloudUsage = { 
 /**
  * Local calendar day these counts belong to (YYYY-MM-DD).

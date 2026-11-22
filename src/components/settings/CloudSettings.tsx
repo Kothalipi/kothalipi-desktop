@@ -28,6 +28,7 @@ import { CloudUsagePanel } from "./CloudUsagePanel";
 
 const KEY_URLS: Record<CloudProvider, string> = {
   gemini: "https://aistudio.google.com/apikey",
+  groq: "https://console.groq.com/keys",
   openai: "https://platform.openai.com/api-keys",
 };
 

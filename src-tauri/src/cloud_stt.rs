@@ -92,10 +92,13 @@ impl CloudProvider {
     pub fn key_id(&self) -> &'static str {
         match self {
             CloudProvider::Gemini => "gemini",
+            CloudProvider::Groq => "groq",
             CloudProvider::OpenAi => "openai",
         }
     }
 }
+
+pub const GROQ_DEFAULT_MODEL: &str = "whisper-large-v3-turbo";
 
 /// The engines that will be tried, in order: enabled and with a key.
 pub fn usable_engines(settings: &AppSettings) -> Vec<CloudEngine> {
@@ -129,6 +132,9 @@ pub async fn transcribe(
         let result = match engine.provider {
             CloudProvider::Gemini => {
                 gemini(key, &engine.model, &audio, language, &settings.custom_words).await
+            }
+            CloudProvider::Groq => {
+                groq(key, &engine.model, &audio, language, &settings.custom_words).await
             }
             CloudProvider::OpenAi => {
                 openai(key, &engine.model, &audio, language, &settings.custom_words).await
@@ -187,6 +193,7 @@ pub fn prewarm(settings: &AppSettings) {
     };
     let url = match engine.provider {
         CloudProvider::Gemini => "https://generativelanguage.googleapis.com/",
+        CloudProvider::Groq => "https://api.groq.com/",
         CloudProvider::OpenAi => "https://api.openai.com/",
     };
     tauri::async_runtime::spawn(async move {
@@ -236,7 +243,7 @@ pub fn parse_limit(provider: &CloudProvider, body: &str) -> LimitInfo {
                 }
             }
         }
-        CloudProvider::OpenAi => {
+        CloudProvider::OpenAi | CloudProvider::Groq => {
             let code = json
                 .pointer("/error/code")
                 .and_then(|x| x.as_str())
@@ -507,6 +514,62 @@ async fn openai(
     let body = response.text().await.map_err(network)?;
     if !status.is_success() {
         return Err(classify_response(&CloudProvider::OpenAi, status, &body));
+    }
+    serde_json::from_str::<OpenAiTranscript>(&body)
+        .map(|t| t.text.trim().to_string())
+        .map_err(|e| (FailureKind::BadResponse, e.to_string()).into())
+}
+
+async fn groq(
+    key: &str,
+    model: &str,
+    audio: &Audio,
+    language: Option<&str>,
+    custom_words: &[String],
+) -> EngineResult {
+    let file = reqwest::multipart::Part::bytes(audio.bytes.clone())
+        .file_name(format!("audio.{}", audio.ext))
+        .mime_str(audio.mime)
+        .map_err(|e| (FailureKind::BadResponse, e.to_string()))?;
+    let effective_model = if model.trim().is_empty() {
+        GROQ_DEFAULT_MODEL
+    } else {
+        model.trim()
+    };
+    let mut form = reqwest::multipart::Form::new()
+        .part("file", file)
+        .text("model", effective_model.to_string())
+        .text("response_format", "json");
+    let mut prompt_parts: Vec<String> = Vec::new();
+    if let Some(lang) = language.filter(|l| *l != "auto") {
+        if let Some(first) = lang.split('+').next() {
+            form = form.text("language", first.to_string());
+        }
+        if lang == "bn+en" {
+            prompt_parts.push(
+                "আমি কালকে office-এ গিয়ে project-এর meeting করব। Bangla with natural English words."
+                    .to_string(),
+            );
+        }
+    }
+    let dict = custom_words_hint(custom_words);
+    if !dict.is_empty() {
+        prompt_parts.push(dict.trim().to_string());
+    }
+    if !prompt_parts.is_empty() {
+        form = form.text("prompt", prompt_parts.join(" "));
+    }
+    let response = client()?
+        .post("https://api.groq.com/openai/v1/audio/transcriptions")
+        .bearer_auth(key)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(network)?;
+    let status = response.status();
+    let body = response.text().await.map_err(network)?;
+    if !status.is_success() {
+        return Err(classify_response(&CloudProvider::Groq, status, &body));
     }
     serde_json::from_str::<OpenAiTranscript>(&body)
         .map(|t| t.text.trim().to_string())
@@ -815,6 +878,7 @@ pub async fn transcribe_recording(
 fn provider_label(p: &CloudProvider) -> &'static str {
     match p {
         CloudProvider::Gemini => "Gemini",
+        CloudProvider::Groq => "Groq Whisper",
         CloudProvider::OpenAi => "OpenAI",
     }
 }
@@ -862,6 +926,10 @@ pub async fn check_key(provider: &CloudProvider, key: &str) -> Result<(), String
             .map_err(|e| e.1)?
             .get("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1")
             .header("x-goog-api-key", key),
+        CloudProvider::Groq => client()
+            .map_err(|e| e.1)?
+            .get("https://api.groq.com/openai/v1/models")
+            .bearer_auth(key),
         CloudProvider::OpenAi => client()
             .map_err(|e| e.1)?
             .get("https://api.openai.com/v1/models")

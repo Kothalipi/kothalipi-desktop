@@ -51,7 +51,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const listenMode: ListenMode = settings?.listen_mode ?? "offline";
   const cloudKeys = settings?.cloud_api_keys ?? {};
   const cloudReady =
-    listenMode === "cloud" && Boolean(cloudKeys.gemini || cloudKeys.openai);
+    listenMode === "cloud" && Boolean(cloudKeys.gemini || cloudKeys.groq || cloudKeys.openai);
 
   // Kothalipi speaks Bangla and English.
   const languagesSaved = useRef(false);
