@@ -40,7 +40,8 @@ impl LanguageKey {
         match self {
             Self::Bangla => "bn",
             Self::English => "en",
-            Self::Translate => "en",
+            // Translate listens to Bangla speech and translates output to English.
+            Self::Translate => "bn",
         }
     }
 }
@@ -118,12 +119,26 @@ fn pick_model(app: &AppHandle, key: LanguageKey) -> Option<String> {
         LanguageKey::Bangla => crate::kothalipi_models::bangla_model_ids()
             .find(|id| hears(id, "bn"))
             .map(str::to_string),
-        LanguageKey::English | LanguageKey::Translate if hears(&selected, "en") => None,
-        LanguageKey::English | LanguageKey::Translate => models
+        LanguageKey::English if hears(&selected, "en") => None,
+        LanguageKey::English => models
             .get_available_models()
             .into_iter()
             .find(|m| m.is_downloaded && m.supported_languages.iter().any(|l| l == "en"))
             .map(|m| m.id),
+        LanguageKey::Translate => {
+            // Prefer a downloaded model that natively supports translation (e.g. Whisper),
+            // else fall back to a Bangla model (Gemini translates the transcript).
+            models
+                .get_available_models()
+                .into_iter()
+                .find(|m| m.is_downloaded && m.supports_translation)
+                .map(|m| m.id)
+                .or_else(|| {
+                    crate::kothalipi_models::bangla_model_ids()
+                        .find(|id| hears(id, "bn"))
+                        .map(str::to_string)
+                })
+        }
     }
 }
 

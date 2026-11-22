@@ -12,7 +12,6 @@ import { usePermissions } from "./usePermissions";
 import { Permissions } from "./screens/Permissions";
 import { TryIt } from "./screens/TryIt";
 import {
-  BANGLA_MODEL_ID,
   CloudKeys,
   Keys,
   Listen,
@@ -49,8 +48,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const permissions = usePermissions(preview);
   const osType = useOsType();
   const models = useOnboardingModels(store.languages);
-  const banglaReady = useModelStore(
-    (s) => s.models.find((m) => m.id === BANGLA_MODEL_ID)?.is_downloaded,
+  const banglaReady = useModelStore((s) =>
+    s.models.some(
+      (m) => m.is_downloaded && m.supported_languages.includes("bn"),
+    ),
   );
   const listenMode: ListenMode = settings?.listen_mode ?? "offline";
   const cloudKeys = settings?.cloud_api_keys ?? {};

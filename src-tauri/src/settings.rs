@@ -501,6 +501,10 @@ pub struct AppSettings {
     pub selected_output_device: Option<String>,
     #[serde(default = "default_translate_to_english")]
     pub translate_to_english: bool,
+    /// Kothalipi: when dictating Bangla, keep spoken English words and technical
+    /// terms in proper English letters (Banglish code-switching). On by default.
+    #[serde(default = "default_bangla_mixed_english")]
+    pub bangla_mixed_english: bool,
     #[serde(default = "default_selected_language")]
     pub selected_language: String,
     /// Every language the person dictates in (codes, e.g. ["en", "zh"]),
@@ -661,6 +665,10 @@ fn default_always_on_microphone() -> bool {
 
 fn default_translate_to_english() -> bool {
     false
+}
+
+fn default_bangla_mixed_english() -> bool {
+    true
 }
 
 fn default_start_hidden() -> bool {
@@ -1143,6 +1151,7 @@ pub fn get_default_settings() -> AppSettings {
         clamshell_microphone: None,
         selected_output_device: None,
         translate_to_english: false,
+        bangla_mixed_english: default_bangla_mixed_english(),
         selected_language: "auto".to_string(),
         overlay_position: default_overlay_position(),
         debug_mode: false,

@@ -15,6 +15,7 @@ import { ModelSettingsCard } from "./ModelSettingsCard";
 import { PreferredLanguages } from "../PreferredLanguages";
 import { ChineseScriptSetting } from "../ChineseScript";
 import { CloudSettings } from "../CloudSettings";
+import { BanglaSpeechSettings } from "../BanglaSpeechSettings";
 import { isChinese } from "@/lib/utils/languageSuggestions";
 
 export const GeneralSettings: React.FC = () => {
@@ -43,6 +44,7 @@ export const GeneralSettings: React.FC = () => {
         )}
       </SettingsGroup>
       <CloudSettings />
+      <BanglaSpeechSettings />
       <ModelSettingsCard />
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />

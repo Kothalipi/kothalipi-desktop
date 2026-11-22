@@ -2,7 +2,7 @@
  * Kothalipi onboarding screens: choose offline or cloud, add cloud keys,
  * download the voice models, and set the language keys.
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -17,7 +17,9 @@ import {
   type ModelInfo,
 } from "@/bindings";
 import { useSettings } from "@/hooks/useSettings";
+import { useModelCatalog } from "@/hooks/useModelCatalog";
 import { useModelStore } from "@/stores/modelStore";
+import { getTranslatedModelName } from "@/lib/utils/modelTranslation";
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Spinner } from "../../ui/Spinner";
@@ -297,39 +299,7 @@ export const CloudKeys: React.FC<{
 /* ---------------- Voice models ---------------- */
 
 /** A model choice for one language: catalog id match and copy keys. */
-interface Choice {
-  match: (m: ModelInfo) => boolean;
-  key: string;
-}
-
-const BANGLA_CHOICES: Choice[] = [
-  { match: (m) => m.id === BANGLA_MODEL_ID, key: "qwen" },
-  {
-    match: (m) => m.id === "kothalipi-bn-bengaliai-whisper-medium",
-    key: "bengaliai",
-  },
-];
-const ENGLISH_CHOICES: Choice[] = [
-  {
-    match: (m) =>
-      m.id.includes("parakeet-unified-en-0.6b") && m.filename.includes("Q8_0"),
-    key: "parakeet",
-  },
-  {
-    match: (m) =>
-      m.id.includes("whisper-small.en") && m.filename.includes("Q8_0"),
-    key: "whisperSmall",
-  },
-  {
-    match: (m) =>
-      m.id.includes("whisper-base.en") && m.filename.includes("Q8_0"),
-    key: "whisperBase",
-  },
-];
-
-/** Which choice fits this computer best. */
-const recommendedKey = (lang: "bangla" | "english", tier: DeviceTier) =>
-  lang === "bangla" ? "qwen" : tier === "light" ? "whisperSmall" : "parakeet";
+/* ---------------- Voice models (dynamic, device-aware, auto-download) ---------------- */
 
 /** This computer, read once per screen. */
 export const useDeviceProfile = () => {
@@ -343,44 +313,131 @@ export const useDeviceProfile = () => {
   return profile;
 };
 
-const LanguageModels: React.FC<{
-  lang: "bangla" | "english";
-  choices: Choice[];
-  tier: DeviceTier;
-  badge: string;
-}> = ({ lang, choices, tier, badge }) => {
-  const { t } = useTranslation();
+/** Pick the best dynamic model list for a language section from the live store & catalog. */
+const useDynamicVoiceOptions = (tier: DeviceTier) => {
   const models = useModelStore((s) => s.models);
+  const enCatalog = useModelCatalog(["en"]);
+  const bothCatalog = useModelCatalog(["bn", "en"]);
+
+  // 1. Dynamic Bangla models (Kothalipi Bangla models first, sorted by device fit)
+  const banglaOptions = useMemo(() => {
+    const dedicated = models.filter(
+      (m) => !m.is_custom && m.id.startsWith("kothalipi-bn-"),
+    );
+    return [...dedicated].sort((a, b) => {
+      if (tier === "light") {
+        // On low-RAM machines, prefer smaller footprint first
+        return a.size_mb - b.size_mb;
+      }
+      return (
+        Number(b.is_recommended) - Number(a.is_recommended) ||
+        b.accuracy_score - a.accuracy_score
+      );
+    });
+  }, [models, tier]);
+
+  // 2. Dynamic English models from the live catalog recommendations
+  const englishOptions = useMemo(() => {
+    const pickedInfos: ModelInfo[] = [];
+    const seen = new Set<string>();
+    const add = (info?: ModelInfo) => {
+      if (info && !info.is_custom && !seen.has(info.id)) {
+        seen.add(info.id);
+        pickedInfos.push(info);
+      }
+    };
+    // Order picks based on device tier: light prefers fastest/smallest first
+    const orderedPicks =
+      tier === "light"
+        ? [...enCatalog.picks].sort(
+            (a, b) =>
+              Number(b.role === "faster") - Number(a.role === "faster") ||
+              Number(b.role === "pick") - Number(a.role === "pick"),
+          )
+        : enCatalog.picks;
+    for (const p of orderedPicks) {
+      add(enCatalog.infoFor(p.model));
+    }
+    for (const r of enCatalog.groups.others.slice(0, 3)) {
+      add(enCatalog.infoFor(r.model));
+    }
+    // Fallback if catalog hasn't matched yet
+    if (pickedInfos.length === 0) {
+      for (const m of models) {
+        if (
+          !m.is_custom &&
+          !m.id.startsWith("kothalipi-bn-") &&
+          m.supported_languages.includes("en")
+        ) {
+          add(m);
+          if (pickedInfos.length >= 3) break;
+        }
+      }
+    }
+    return pickedInfos;
+  }, [enCatalog, models, tier]);
+
+  // 3. Dynamic single all-in-one Bangla + English models from the live catalog
+  const allInOneOptions = useMemo(() => {
+    const list: ModelInfo[] = [];
+    const seen = new Set<string>();
+    const add = (info?: ModelInfo) => {
+      if (info && !info.is_custom && !seen.has(info.id)) {
+        seen.add(info.id);
+        list.push(info);
+      }
+    };
+    for (const p of bothCatalog.picks) {
+      add(bothCatalog.infoFor(p.model));
+    }
+    for (const r of bothCatalog.groups.others) {
+      add(bothCatalog.infoFor(r.model));
+    }
+    // On light tier, put smaller bilingual models first
+    if (tier === "light") {
+      return [...list].sort((a, b) => a.size_mb - b.size_mb);
+    }
+    return list;
+  }, [bothCatalog, tier]);
+
+  return { banglaOptions, englishOptions, allInOneOptions };
+};
+
+const DynamicModelSection: React.FC<{
+  title: string;
+  badge: string;
+  options: ModelInfo[];
+  selectedId: string;
+  bestId: string;
+  onSelect: (id: string) => void;
+}> = ({ title, badge, options, selectedId, bestId, onSelect }) => {
+  const { t } = useTranslation();
   const progress = useModelStore((s) => s.downloadProgress);
   const downloading = useModelStore((s) => s.downloadingModels);
   const downloadModel = useModelStore((s) => s.downloadModel);
-  const options = choices
-    .map((c) => ({ ...c, model: models.find(c.match) }))
-    .filter((o): o is Choice & { model: ModelInfo } => Boolean(o.model));
-  const best = recommendedKey(lang, tier);
-  const [picked, setPicked] = useState(best);
   const [expanded, setExpanded] = useState(false);
-  const chosen = options.find((o) => o.key === picked) ?? options[0];
-  // Only the pick shows until "Other models" opens the rest.
-  const shown = expanded ? options : options.filter((o) => o === chosen);
-  const base = `onboarding.kothalipi.voices.${lang}`;
+
+  const chosen = options.find((m) => m.id === selectedId) ?? options[0];
+  const shown = expanded ? options : chosen ? [chosen] : [];
+
+  if (options.length === 0) return null;
 
   return (
     <div className="py-[14px] [&+&]:border-t [&+&]:border-line">
       <div className="mb-[8px] flex items-center gap-[8px]">
-        <b className="font-display text-row font-[650]">{t(`${base}.name`)}</b>
+        <b className="font-display text-row font-[650]">{title}</b>
         <span className="rounded-full bg-wash px-[8px] py-[1px] text-[11px] font-semibold text-ink-2">
           {badge}
         </span>
       </div>
       <div className="flex flex-col gap-[6px]" role="radiogroup">
-        {shown.map((o) => {
-          const ready = o.model.is_downloaded;
-          const busy = Boolean(downloading[o.model.id]);
-          const on = chosen?.key === o.key;
+        {shown.map((model) => {
+          const ready = model.is_downloaded;
+          const busy = Boolean(downloading[model.id]);
+          const on = chosen?.id === model.id;
           return (
             <label
-              key={o.key}
+              key={model.id}
               className={`flex cursor-pointer items-center gap-[12px] rounded-[12px] border px-[12px] py-[10px] transition-colors ${
                 on
                   ? "border-background-ui bg-wash"
@@ -389,37 +446,37 @@ const LanguageModels: React.FC<{
             >
               <input
                 type="radio"
-                name={lang}
+                name={title}
                 className="accent-[var(--color-background-ui)]"
                 checked={on}
-                onChange={() => setPicked(o.key)}
+                onChange={() => onSelect(model.id)}
               />
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-[6px] text-small font-semibold">
-                  {t(`${base}.options.${o.key}.name`)}
-                  {o.key === best && (
+                  {getTranslatedModelName(model, t)}
+                  {model.id === bestId && (
                     <span className="rounded-full bg-moss-wash px-[7px] text-[11px] font-semibold text-moss">
                       {t("onboarding.kothalipi.voices.bestHere")}
                     </span>
                   )}
                 </span>
                 <span className="block text-[12.5px] leading-[1.4] text-ink-2">
-                  {t(`${base}.options.${o.key}.note`)} ·{" "}
+                  {model.description} ·{" "}
                   {t("onboarding.kothalipi.voices.size", {
-                    mb: o.model.size_mb,
+                    mb: model.size_mb,
                   })}
                 </span>
               </span>
               {ready ? (
-                <span className="inline-flex items-center gap-[4px] text-small font-semibold text-moss">
+                <span className="inline-flex shrink-0 items-center gap-[4px] text-small font-semibold text-moss">
                   <Check size={15} aria-hidden="true" />
                   {t("onboarding.kothalipi.voices.ready")}
                 </span>
               ) : busy ? (
-                <span className="inline-flex min-w-[64px] items-center justify-end gap-[6px] text-small text-ink-2 tabular-nums">
+                <span className="inline-flex min-w-[64px] shrink-0 items-center justify-end gap-[6px] text-small text-ink-2 tabular-nums">
                   <Spinner />
                   {t("onboarding.kothalipi.voices.downloading", {
-                    percent: Math.floor(progress[o.model.id]?.percentage ?? 0),
+                    percent: Math.floor(progress[model.id]?.percentage ?? 0),
                   })}
                 </span>
               ) : (
@@ -427,10 +484,10 @@ const LanguageModels: React.FC<{
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="inline-flex items-center gap-[6px]"
+                    className="inline-flex shrink-0 items-center gap-[6px]"
                     onClick={(e) => {
                       e.preventDefault();
-                      downloadModel(o.model.id);
+                      downloadModel(model.id);
                     }}
                   >
                     <Download size={14} aria-hidden="true" />
@@ -472,22 +529,79 @@ export const Voices: React.FC<{
   const downloading = useModelStore((s) => s.downloadingModels);
   const currentModel = useModelStore((s) => s.currentModel);
   const selectModel = useModelStore((s) => s.selectModel);
+  const downloadModel = useModelStore((s) => s.downloadModel);
   const device = useDeviceProfile();
   const tier: DeviceTier = device?.tier ?? "standard";
 
-  const banglaModels = models.filter((m) =>
-    BANGLA_CHOICES.some((c) => c.match(m)),
-  );
-  const banglaReady = banglaModels.find((m) => m.is_downloaded);
-  const banglaStarted =
-    Boolean(banglaReady) || banglaModels.some((m) => downloading[m.id]);
+  const { banglaOptions, englishOptions, allInOneOptions } =
+    useDynamicVoiceOptions(tier);
 
-  // The plain transcribe key uses the selected model: pick Bangla once it's on disk.
+  const hasSingleOption = allInOneOptions.length > 0;
+  // Default to specialized Bangla + English pair when Bangla models exist,
+  // or single bilingual model if only a single bilingual model is available.
+  const [setupMode, setSetupMode] = useState<"pair" | "single">(
+    banglaOptions.length > 0 ? "pair" : "single",
+  );
+
+  const bestBanglaId = banglaOptions[0]?.id ?? "";
+  const bestEnglishId = englishOptions[0]?.id ?? "";
+  const bestSingleId = allInOneOptions[0]?.id ?? "";
+
+  const [pickedBangla, setPickedBangla] = useState<string>("");
+  const [pickedEnglish, setPickedEnglish] = useState<string>("");
+  const [pickedSingle, setPickedSingle] = useState<string>("");
+
+  const activeBanglaId =
+    (pickedBangla && banglaOptions.some((m) => m.id === pickedBangla)
+      ? pickedBangla
+      : bestBanglaId) || "";
+  const activeEnglishId =
+    (pickedEnglish && englishOptions.some((m) => m.id === pickedEnglish)
+      ? pickedEnglish
+      : bestEnglishId) || "";
+  const activeSingleId =
+    (pickedSingle && allInOneOptions.some((m) => m.id === pickedSingle)
+      ? pickedSingle
+      : bestSingleId) || "";
+
+  const selectedIds = useMemo(() => {
+    if (setupMode === "single" && activeSingleId) {
+      return [activeSingleId];
+    }
+    return [activeBanglaId, activeEnglishId].filter(Boolean);
+  }, [setupMode, activeSingleId, activeBanglaId, activeEnglishId]);
+
+  const selectedModels = useMemo(
+    () =>
+      selectedIds
+        .map((id) => models.find((m) => m.id === id))
+        .filter((m): m is ModelInfo => Boolean(m)),
+    [selectedIds, models],
+  );
+
+  const pendingDownloads = selectedModels.filter(
+    (m) => !m.is_downloaded && !downloading[m.id],
+  );
+  const anyStartedOrReady = selectedModels.some(
+    (m) => m.is_downloaded || downloading[m.id],
+  );
+
+  // Pick the first downloaded Bangla-capable model once it's on disk.
+  const banglaReady = models.find(
+    (m) => m.is_downloaded && m.supported_languages.includes("bn"),
+  );
   useEffect(() => {
     if (banglaReady && !currentModel) selectModel(banglaReady.id);
   }, [banglaReady?.id, currentModel, selectModel]);
 
-  const canContinue = cloud || banglaStarted;
+  // Automatically start downloading all selected model(s) on Continue!
+  const handleContinue = () => {
+    for (const model of pendingDownloads) {
+      void downloadModel(model.id);
+    }
+    onContinue();
+  };
+
   const deviceLine = device
     ? t("onboarding.kothalipi.voices.device", {
         chip: device.chip || t("onboarding.kothalipi.voices.thisComputer"),
@@ -500,12 +614,12 @@ export const Voices: React.FC<{
       progress={progress}
       onBack={onBack}
       hint={
-        canContinue
-          ? t("onboarding.kothalipi.voices.continueWhile")
-          : t("onboarding.kothalipi.voices.needBangla")
+        pendingDownloads.length > 0
+          ? t("onboarding.kothalipi.voices.autoDownloadHint")
+          : t("onboarding.kothalipi.voices.continueWhile")
       }
       left={
-        cloud && !banglaStarted ? (
+        cloud && !anyStartedOrReady ? (
           <Button variant="ghost" size="md" onClick={onContinue}>
             {t("onboarding.kothalipi.voices.skip")}
           </Button>
@@ -515,10 +629,12 @@ export const Voices: React.FC<{
         <Button
           variant="primary"
           size="lg"
-          disabled={!canContinue}
-          onClick={onContinue}
+          disabled={selectedIds.length === 0 && !cloud}
+          onClick={handleContinue}
         >
-          {t("onboarding.shell.continue")}
+          {pendingDownloads.length > 0
+            ? t("onboarding.kothalipi.voices.downloadAndContinue")
+            : t("onboarding.shell.continue")}
         </Button>
       }
     >
@@ -547,22 +663,68 @@ export const Voices: React.FC<{
         }
       >
         <div className={scrollCard}>
-          <LanguageModels
-            lang="bangla"
-            choices={BANGLA_CHOICES}
-            tier={tier}
-            badge={t(
-              cloud
-                ? "onboarding.kothalipi.voices.recommended"
-                : "onboarding.kothalipi.voices.required",
-            )}
-          />
-          <LanguageModels
-            lang="english"
-            choices={ENGLISH_CHOICES}
-            tier={tier}
-            badge={t("onboarding.kothalipi.voices.recommended")}
-          />
+          {hasSingleOption && banglaOptions.length > 0 && (
+            <div className="flex gap-[8px] pt-[14px] pb-[4px]">
+              <button
+                type="button"
+                onClick={() => setSetupMode("pair")}
+                aria-pressed={setupMode === "pair"}
+                className={`flex-1 cursor-pointer rounded-[10px] border px-[10px] py-[7px] text-center text-[12.5px] font-semibold transition-colors ${
+                  setupMode === "pair"
+                    ? "border-background-ui bg-wash text-text"
+                    : "border-line text-ink-2 hover:border-ink-3 hover:text-text"
+                }`}
+              >
+                {t("onboarding.kothalipi.voices.modePair")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSetupMode("single")}
+                aria-pressed={setupMode === "single"}
+                className={`flex-1 cursor-pointer rounded-[10px] border px-[10px] py-[7px] text-center text-[12.5px] font-semibold transition-colors ${
+                  setupMode === "single"
+                    ? "border-background-ui bg-wash text-text"
+                    : "border-line text-ink-2 hover:border-ink-3 hover:text-text"
+                }`}
+              >
+                {t("onboarding.kothalipi.voices.modeSingle")}
+              </button>
+            </div>
+          )}
+
+          {setupMode === "single" && hasSingleOption ? (
+            <DynamicModelSection
+              title={t("onboarding.kothalipi.voices.singleTitle")}
+              badge={t("onboarding.kothalipi.voices.singleBadge")}
+              options={allInOneOptions}
+              selectedId={activeSingleId}
+              bestId={bestSingleId}
+              onSelect={setPickedSingle}
+            />
+          ) : (
+            <>
+              <DynamicModelSection
+                title={t("onboarding.kothalipi.voices.bangla.name")}
+                badge={t(
+                  cloud
+                    ? "onboarding.kothalipi.voices.recommended"
+                    : "onboarding.kothalipi.voices.required",
+                )}
+                options={banglaOptions}
+                selectedId={activeBanglaId}
+                bestId={bestBanglaId}
+                onSelect={setPickedBangla}
+              />
+              <DynamicModelSection
+                title={t("onboarding.kothalipi.voices.english.name")}
+                badge={t("onboarding.kothalipi.voices.recommended")}
+                options={englishOptions}
+                selectedId={activeEnglishId}
+                bestId={bestEnglishId}
+                onSelect={setPickedEnglish}
+              />
+            </>
+          )}
         </div>
       </ScreenMain>
     </OnboardingShell>

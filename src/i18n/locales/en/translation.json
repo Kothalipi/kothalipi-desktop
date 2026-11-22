@@ -302,6 +302,12 @@
         "recommended": "Recommended",
         "skip": "Skip for now",
         "continueWhile": "You can continue while it downloads.",
+        "autoDownloadHint": "Selected models will download automatically in the background when you continue.",
+        "downloadAndContinue": "Download & Continue",
+        "modePair": "Best pair (Bangla + English)",
+        "modeSingle": "Single model (Both in 1)",
+        "singleTitle": "Bangla & English",
+        "singleBadge": "All-in-one",
         "needBangla": "Download the Bangla model to continue.",
         "bestHere": "Best for this computer",
         "device": "{{chip}} · {{ram}} GB memory",
@@ -1074,6 +1080,19 @@
         "badgeKeyNeeded": "Key Needed",
         "priority": "Priority:",
         "postProcessActive": "AI Voice Translation: {{prompt}} (Post-Processing)"
+      },
+      "banglaSpeech": {
+        "title": "Bangla & Translation",
+        "mixedEnglish": {
+          "label": "Keep English words in English (Banglish)",
+          "description": "When speaking Bangla, write spoken English words and technical terms in proper English letters (e.g. \"আমি কালকে meeting-এ যাব\"). Turn off for pure Bangla script."
+        },
+        "translateHint": {
+          "geminiReady": "Translation is powered by your Google Gemini API key — works instantly with any model, no large local download required.",
+          "localReady": "Offline translation is active using {{model}}. Add a Gemini API key above for faster, more natural translation.",
+          "needGemini": "Add a free Google Gemini API key above to translate Bangla speech directly to English.",
+          "needEngine": "Add a free Google Gemini API key above for instant translation, or download Whisper Large v3 for 100% offline translation."
+        }
       }
     }
   },
