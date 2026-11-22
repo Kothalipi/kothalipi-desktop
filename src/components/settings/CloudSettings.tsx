@@ -23,6 +23,7 @@ import { Dropdown } from "../ui/Dropdown";
 import { Input } from "../ui/Input";
 import { SettingContainer } from "../ui/SettingContainer";
 import { SettingsGroup } from "../ui/SettingsGroup";
+import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { CloudUsagePanel } from "./CloudUsagePanel";
 
 const KEY_URLS: Record<CloudProvider, string> = {
@@ -163,6 +164,8 @@ export const CloudSettings: React.FC = () => {
     useSettings();
   const { currentModel, models } = useModelStore();
   const mode: ListenMode = getSetting("listen_mode") ?? "offline";
+  const localModelEnabled = getSetting("local_model_enabled") ?? true;
+  const fallbackEnabled = getSetting("fallback_enabled") ?? true;
   const engines = getSetting("cloud_engines") ?? [];
   const keys = getSetting("cloud_api_keys") ?? {};
 
@@ -171,6 +174,26 @@ export const CloudSettings: React.FC = () => {
     (e) => e.enabled && Boolean(keys[e.provider]),
   );
   const activeCloudEngine = enabledEnginesWithKey[0];
+  const cloudIsPrimary = mode === "cloud" || !localModelEnabled;
+
+  // Build ordered priority chain for live visual preview
+  const priorityChain: Array<{ label: string; active: boolean }> = [];
+  const cloudItems = engines.map((e) => ({
+    label: t(`settings.kothalipi.cloud.providers.${e.provider}`),
+    active: e.enabled && Boolean(keys[e.provider]),
+  }));
+  const localItem = {
+    label: currentModelInfo?.name || t("settings.kothalipi.mode.offline"),
+    active: localModelEnabled && Boolean(currentModelInfo?.is_downloaded),
+  };
+  if (mode === "cloud") {
+    priorityChain.push(...cloudItems);
+    if (fallbackEnabled) priorityChain.push(localItem);
+  } else {
+    if (localModelEnabled) priorityChain.push(localItem);
+    if (fallbackEnabled || !localModelEnabled)
+      priorityChain.push(...cloudItems);
+  }
 
   const postProcessEnabled = getSetting("post_process_enabled") ?? false;
   const postProcessPromptId = getSetting("post_process_selected_prompt_id");
@@ -194,8 +217,11 @@ export const CloudSettings: React.FC = () => {
       >
         <Dropdown
           options={[
-            { value: "offline", label: t("settings.kothalipi.mode.offline") },
-            { value: "cloud", label: t("settings.kothalipi.mode.cloud") },
+            {
+              value: "offline",
+              label: t("settings.kothalipi.mode.offlineFirst"),
+            },
+            { value: "cloud", label: t("settings.kothalipi.mode.cloudFirst") },
           ]}
           selectedValue={mode}
           onSelect={(v) => updateSetting("listen_mode", v as ListenMode)}
@@ -203,11 +229,35 @@ export const CloudSettings: React.FC = () => {
         />
       </SettingContainer>
 
-      {/* Active Engine & Model Live Status Card */}
+      <ToggleSwitch
+        checked={localModelEnabled}
+        onChange={(enabled) => updateSetting("local_model_enabled", enabled)}
+        isUpdating={isUpdating("local_model_enabled")}
+        label={t("settings.kothalipi.engineControls.localModel.label")}
+        description={t(
+          "settings.kothalipi.engineControls.localModel.description",
+        )}
+        descriptionMode="tooltip"
+        grouped={true}
+      />
+
+      <ToggleSwitch
+        checked={fallbackEnabled}
+        onChange={(enabled) => updateSetting("fallback_enabled", enabled)}
+        isUpdating={isUpdating("fallback_enabled")}
+        label={t("settings.kothalipi.engineControls.fallback.label")}
+        description={t(
+          "settings.kothalipi.engineControls.fallback.description",
+        )}
+        descriptionMode="tooltip"
+        grouped={true}
+      />
+
+      {/* Active Engine & Live Priority Chain Card */}
       <div className="mx-4 my-2 p-3.5 rounded-lg border border-line bg-surface/40 flex flex-col gap-2.5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-start gap-2.5">
-            {mode === "offline" ? (
+            {!cloudIsPrimary ? (
               <div className="mt-0.5 p-1.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                 <Cpu size={16} />
               </div>
@@ -221,7 +271,7 @@ export const CloudSettings: React.FC = () => {
                 <span className="text-xs font-semibold uppercase tracking-wider text-text/90">
                   {t("settings.kothalipi.status.activeEngine")}
                 </span>
-                {mode === "offline" ? (
+                {!cloudIsPrimary ? (
                   <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
                     {t("settings.kothalipi.status.localOffline")}
                   </span>
@@ -240,7 +290,7 @@ export const CloudSettings: React.FC = () => {
                 )}
               </div>
               <div className="text-xs text-text/70 mt-0.5">
-                {mode === "offline" ? (
+                {!cloudIsPrimary ? (
                   <span>
                     {t("settings.kothalipi.status.voiceModel", {
                       name: currentModelInfo?.name || "Qwen3-ASR 0.6B Bangla",
@@ -267,7 +317,7 @@ export const CloudSettings: React.FC = () => {
           </div>
 
           <div className="shrink-0">
-            {mode === "offline" ? (
+            {!cloudIsPrimary ? (
               <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium border border-emerald-500/20">
                 {t("settings.kothalipi.status.badgeOnDevice")}
               </span>
@@ -283,37 +333,26 @@ export const CloudSettings: React.FC = () => {
           </div>
         </div>
 
-        {/* Fallback chain visual in Cloud mode */}
-        {mode === "cloud" && (
-          <div className="flex items-center gap-1.5 text-[11px] text-text/60 pt-2 border-t border-line/40">
-            <span className="font-medium text-text/75">
-              {t("settings.kothalipi.status.priority")}
-            </span>
-            <span
-              className={`px-1.5 py-0.5 rounded ${
-                keys.gemini
-                  ? "bg-text/10 text-text font-medium"
-                  : "opacity-40 line-through"
-              }`}
-            >
-              1. {t("settings.kothalipi.cloud.providers.gemini")}
-            </span>
-            <span>→</span>
-            <span
-              className={`px-1.5 py-0.5 rounded ${
-                keys.openai
-                  ? "bg-text/10 text-text font-medium"
-                  : "opacity-40 line-through"
-              }`}
-            >
-              2. {t("settings.kothalipi.cloud.providers.openai")}
-            </span>
-            <span>→</span>
-            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
-              3. {t("settings.kothalipi.mode.offline")}
-            </span>
-          </div>
-        )}
+        {/* Live Priority & Fallback Chain Visual (always visible!) */}
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-text/60 pt-2 border-t border-line/40">
+          <span className="font-medium text-text/75">
+            {t("settings.kothalipi.status.priority")}
+          </span>
+          {priorityChain.map((item, idx) => (
+            <React.Fragment key={`${item.label}-${idx}`}>
+              {idx > 0 && <span>→</span>}
+              <span
+                className={`px-1.5 py-0.5 rounded ${
+                  item.active
+                    ? "bg-text/10 text-text font-medium"
+                    : "opacity-40 line-through"
+                }`}
+              >
+                {idx + 1}. {item.label}
+              </span>
+            </React.Fragment>
+          ))}
+        </div>
 
         {/* AI Translation / Post-Processing indicator if enabled */}
         {postProcessEnabled && (
@@ -328,36 +367,32 @@ export const CloudSettings: React.FC = () => {
         )}
       </div>
 
-      {mode === "cloud" &&
-        engines.map((engine, i) => (
-          <EngineRow
-            key={engine.provider}
-            engine={engine}
-            index={i}
-            count={engines.length}
-            hasKey={Boolean(keys[engine.provider])}
-            onChange={(e) =>
-              saveEngines(engines.map((x, j) => (j === i ? e : x)))
-            }
-            onMove={(delta) => {
-              const next = [...engines];
-              [next[i], next[i + delta]] = [next[i + delta], next[i]];
-              saveEngines(next);
-            }}
-          />
-        ))}
+      {/* Cloud engine rows are always visible so users can enable/disable or reorder Gemini/OpenAI in any mode */}
+      {engines.map((engine, i) => (
+        <EngineRow
+          key={engine.provider}
+          engine={engine}
+          index={i}
+          count={engines.length}
+          hasKey={Boolean(keys[engine.provider])}
+          onChange={(e) =>
+            saveEngines(engines.map((x, j) => (j === i ? e : x)))
+          }
+          onMove={(delta) => {
+            const next = [...engines];
+            [next[i], next[i + delta]] = [next[i + delta], next[i]];
+            saveEngines(next);
+          }}
+        />
+      ))}
 
-      {/* Claude explanation note in Cloud mode */}
-      {mode === "cloud" && (
-        <div className="mx-4 my-1.5 flex items-start gap-2 rounded-md bg-surface/30 px-3 py-2 text-xs text-text/70 border border-line/50">
-          <Info size={14} className="mt-0.5 shrink-0 text-text/50" />
-          <span>{t("onboarding.kothalipi.cloud.claudeNote")}</span>
-        </div>
-      )}
+      {/* Claude explanation note */}
+      <div className="mx-4 my-1.5 flex items-start gap-2 rounded-md bg-surface/30 px-3 py-2 text-xs text-text/70 border border-line/50">
+        <Info size={14} className="mt-0.5 shrink-0 text-text/50" />
+        <span>{t("onboarding.kothalipi.cloud.claudeNote")}</span>
+      </div>
 
-      {mode === "cloud" && (
-        <CloudUsagePanel providers={engines.map((e) => e.provider)} />
-      )}
+      <CloudUsagePanel providers={engines.map((e) => e.provider)} />
     </SettingsGroup>
   );
 };

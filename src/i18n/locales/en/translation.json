@@ -1031,10 +1031,22 @@
     "kothalipi": {
       "title": "Listening",
       "mode": {
-        "title": "How It Listens",
-        "description": "Offline is free and private. Cloud uses your own keys and falls back to offline when every key is over its limit or you have no internet.",
+        "title": "Primary Engine",
+        "description": "Choose whether Cloud (Gemini / OpenAI) or your Local Offline Model runs first. You can enable/disable each engine and toggle automatic fallback below.",
         "offline": "Offline (free)",
-        "cloud": "Cloud (your keys)"
+        "cloud": "Cloud (your keys)",
+        "offlineFirst": "Local Model First (Offline → Cloud fallback)",
+        "cloudFirst": "Cloud API First (Gemini/OpenAI → Local fallback)"
+      },
+      "engineControls": {
+        "localModel": {
+          "label": "Use Local Offline Model",
+          "description": "Turn off if you have a local model downloaded but do not want Kothalipi to load or fall back to it (Cloud-only)."
+        },
+        "fallback": {
+          "label": "Automatic Backup Fallback",
+          "description": "When the primary engine fails or hits a limit, automatically switch to the secondary engine (Cloud ↔ Local). Turn off to test only the primary engine."
+        }
       },
       "cloud": {
         "providers": {

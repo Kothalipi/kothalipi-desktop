@@ -646,82 +646,170 @@ pub async fn restore_english_in_bangla(
     Ok(trimmed.to_string())
 }
 
-/// Kothalipi's transcription entry point for a finished recording: cloud
-/// engines first when Cloud mode has any, then the offline model. When the
-/// offline model is missing too, raise the "pick a model" notice so the
-/// user is pointed at a download.
-pub async fn transcribe_recording(
+fn gemini_enabled_with_key(settings: &AppSettings) -> bool {
+    !api_key(settings, &CloudProvider::Gemini).is_empty()
+        && settings
+            .cloud_engines
+            .iter()
+            .any(|e| e.provider == CloudProvider::Gemini && e.enabled)
+}
+
+async fn run_cloud_engines(
+    app: &tauri::AppHandle,
+    tm: &crate::managers::transcription::TranscriptionManager,
+    samples: &[f32],
+    settings: &AppSettings,
+) -> Result<crate::managers::transcription::Transcription, Vec<EngineFailure>> {
+    let language = match settings.selected_language.as_str() {
+        "auto" => None,
+        "bn" if settings.bangla_mixed_english => Some("bn+en"),
+        "bn" => Some("bn"),
+        other => Some(other),
+    };
+    let (mut text, provider) = transcribe(settings, samples, language).await?;
+    crate::cloud_usage::record_success(app, &provider, samples.len() as f64 / 16_000.0);
+    tm.cancel_stream();
+
+    if settings.translate_to_english && contains_bangla(&text) {
+        if let Ok(translated) = translate_to_english(settings, &text).await {
+            text = translated;
+        }
+    }
+
+    Ok(crate::managers::transcription::Transcription {
+        text: text.split_whitespace().collect::<Vec<_>>().join(" "),
+        language: None,
+    })
+}
+
+async fn run_local_engine(
     app: &tauri::AppHandle,
     tm: &crate::managers::transcription::TranscriptionManager,
     samples: Vec<f32>,
-    settings: AppSettings,
+    settings: &AppSettings,
 ) -> anyhow::Result<crate::managers::transcription::Transcription> {
-    if cloud_ready(&settings) {
-        // When bangla_mixed_english is enabled (default), the Bangla key also
-        // understands English words spoken mid-sentence and writes them in English.
-        let language = match settings.selected_language.as_str() {
-            "auto" => None,
-            "bn" if settings.bangla_mixed_english => Some("bn+en"),
-            "bn" => Some("bn"),
-            other => Some(other),
-        };
-        match transcribe(&settings, &samples, language).await {
-            Ok((mut text, provider)) => {
-                crate::cloud_usage::record_success(app, &provider, samples.len() as f64 / 16_000.0);
-                // The live decoder (if any) isn't needed any more.
-                tm.cancel_stream();
-
-                if settings.translate_to_english && contains_bangla(&text) {
-                    if let Ok(translated) = translate_to_english(&settings, &text).await {
-                        text = translated;
-                    }
-                }
-
-                return Ok(crate::managers::transcription::Transcription {
-                    text: text.split_whitespace().collect::<Vec<_>>().join(" "),
-                    language: None,
-                });
-            }
-            Err(failures) => {
-                crate::cloud_usage::record_failures(app, &failures);
-                let summary = describe_failures(&failures);
-                warn!("All cloud engine(s) failed ({summary}); trying the offline model");
-                // The offline model is the last resort. When there is none, say
-                // why the cloud failed instead of a bare "no model loaded".
-                use tauri::Manager as _;
-                let offline_ready = tm.is_model_loaded()
-                    || (!settings.selected_model.is_empty()
-                        && app
-                            .state::<std::sync::Arc<crate::managers::model::ModelManager>>()
-                            .get_model_path(&settings.selected_model)
-                            .is_ok());
-                if !offline_ready {
-                    return Err(anyhow::anyhow!(
-                        "{summary}. No offline model is installed as a backup, so nothing could be typed."
-                    ));
-                }
-                // Cloud mode no longer preloads the offline model, so start it now.
-                tm.initiate_model_load(true);
-            }
-        }
+    use tauri::Manager as _;
+    let offline_ready = tm.is_model_loaded()
+        || (!settings.selected_model.is_empty()
+            && app
+                .state::<std::sync::Arc<crate::managers::model::ModelManager>>()
+                .get_model_path(&settings.selected_model)
+                .is_ok());
+    if !offline_ready {
+        return Err(anyhow::anyhow!(
+            "No local offline model is installed or selected."
+        ));
     }
+    if !tm.is_model_loaded() {
+        tm.initiate_model_load(true);
+    }
+
     let mut outcome = tm.transcribe_recording(samples)?;
-    let has_gemini_key = !api_key(&settings, &CloudProvider::Gemini).is_empty();
-    if settings.translate_to_english && contains_bangla(&outcome.text) && has_gemini_key {
-        if let Ok(translated) = translate_to_english(&settings, &outcome.text).await {
+    let use_gemini_assist = gemini_enabled_with_key(settings);
+    if settings.translate_to_english && contains_bangla(&outcome.text) && use_gemini_assist {
+        if let Ok(translated) = translate_to_english(settings, &outcome.text).await {
             outcome.text = translated;
         }
     } else if !settings.translate_to_english
         && settings.bangla_mixed_english
         && !settings.smart_polish
         && contains_bangla(&outcome.text)
-        && has_gemini_key
+        && use_gemini_assist
     {
-        if let Ok(formatted) = restore_english_in_bangla(&settings, &outcome.text).await {
+        if let Ok(formatted) = restore_english_in_bangla(settings, &outcome.text).await {
             outcome.text = formatted;
         }
     }
     Ok(outcome)
+}
+
+/// Kothalipi's transcription entry point for a finished recording.
+///
+/// Respects user-selected priority (`listen_mode`: Cloud first vs Local first),
+/// individual engine toggles (`local_model_enabled`, per-cloud-engine `enabled`),
+/// and `fallback_enabled`.
+pub async fn transcribe_recording(
+    app: &tauri::AppHandle,
+    tm: &crate::managers::transcription::TranscriptionManager,
+    samples: Vec<f32>,
+    settings: AppSettings,
+) -> anyhow::Result<crate::managers::transcription::Transcription> {
+    let has_cloud = !usable_engines(&settings).is_empty();
+    let local_allowed = settings.local_model_enabled;
+    let fallback_allowed = settings.fallback_enabled;
+
+    match settings.listen_mode {
+        crate::settings::ListenMode::Cloud => {
+            if has_cloud {
+                match run_cloud_engines(app, tm, &samples, &settings).await {
+                    Ok(t) => return Ok(t),
+                    Err(failures) => {
+                        crate::cloud_usage::record_failures(app, &failures);
+                        let summary = describe_failures(&failures);
+                        if !local_allowed || !fallback_allowed {
+                            return Err(anyhow::anyhow!(
+                                "{summary}. Local model fallback is turned off in Settings."
+                            ));
+                        }
+                        warn!(
+                            "All cloud engine(s) failed ({summary}); falling back to local model"
+                        );
+                        return run_local_engine(app, tm, samples, &settings)
+                            .await
+                            .map_err(|_| {
+                                anyhow::anyhow!(
+                                    "{summary}. No offline model is installed as a backup, so nothing could be typed."
+                                )
+                            });
+                    }
+                }
+            }
+            if local_allowed {
+                return run_local_engine(app, tm, samples, &settings).await;
+            }
+            Err(anyhow::anyhow!(
+                "No cloud API key is enabled and the local model is turned off. Enable Gemini/OpenAI or turn on the local model in Settings."
+            ))
+        }
+        crate::settings::ListenMode::Offline => {
+            if local_allowed {
+                match run_local_engine(app, tm, samples.clone(), &settings).await {
+                    Ok(t) => return Ok(t),
+                    Err(local_err) => {
+                        if fallback_allowed && has_cloud {
+                            warn!(
+                                "Local model failed ({local_err}); falling back to cloud engine(s)"
+                            );
+                            return match run_cloud_engines(app, tm, &samples, &settings).await {
+                                Ok(t) => Ok(t),
+                                Err(failures) => {
+                                    crate::cloud_usage::record_failures(app, &failures);
+                                    let summary = describe_failures(&failures);
+                                    Err(anyhow::anyhow!(
+                                        "Local model failed ({local_err}); cloud fallback also failed ({summary})."
+                                    ))
+                                }
+                            };
+                        }
+                        return Err(local_err);
+                    }
+                }
+            }
+            // Local model explicitly turned off: use enabled cloud engines if any
+            if has_cloud {
+                return match run_cloud_engines(app, tm, &samples, &settings).await {
+                    Ok(t) => Ok(t),
+                    Err(failures) => {
+                        crate::cloud_usage::record_failures(app, &failures);
+                        Err(anyhow::anyhow!("{}", describe_failures(&failures)))
+                    }
+                };
+            }
+            Err(anyhow::anyhow!(
+                "Local model is turned off and no cloud engine is enabled. Turn on either the local model or a cloud API key in Settings."
+            ))
+        }
+    }
 }
 
 fn provider_label(p: &CloudProvider) -> &'static str {
@@ -756,9 +844,10 @@ pub fn describe_failures(failures: &[EngineFailure]) -> String {
         .join("; ")
 }
 
-/// Cloud mode with at least one engine that has a key.
+/// Cloud will run first (either Cloud mode is primary, or the local model is turned off)
+/// and at least one cloud engine is enabled with a key.
 pub fn cloud_ready(settings: &AppSettings) -> bool {
-    settings.listen_mode == crate::settings::ListenMode::Cloud
+    (settings.listen_mode == crate::settings::ListenMode::Cloud || !settings.local_model_enabled)
         && !usable_engines(settings).is_empty()
 }
 

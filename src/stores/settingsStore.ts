@@ -146,6 +146,10 @@ const settingUpdaters: {
   vibe_coding_mode: (value) =>
     commands.changeVibeCodingModeSetting(value as boolean),
   voice_snippets: (value) => commands.changeVoiceSnippetsSetting(value as any),
+  local_model_enabled: (value) =>
+    commands.changeLocalModelEnabledSetting(value as boolean),
+  fallback_enabled: (value) =>
+    commands.changeFallbackEnabledSetting(value as boolean),
   selected_language: (value) =>
     commands.changeSelectedLanguageSetting(value as string),
   overlay_position: (value) =>

@@ -615,6 +615,12 @@ pub struct AppSettings {
     /// Kothalipi: offline model or cloud engines.
     #[serde(default)]
     pub listen_mode: ListenMode,
+    /// Kothalipi: whether the local offline speech model may be used (as primary or fallback).
+    #[serde(default = "default_local_model_enabled")]
+    pub local_model_enabled: bool,
+    /// Kothalipi: when the primary engine fails, automatically fall back to the backup engine.
+    #[serde(default = "default_fallback_enabled")]
+    pub fallback_enabled: bool,
     /// Kothalipi: cloud engines, tried in order.
     #[serde(default = "default_cloud_engines")]
     pub cloud_engines: Vec<CloudEngine>,
@@ -690,6 +696,14 @@ fn default_bangla_mixed_english() -> bool {
 }
 
 fn default_app_aware_tone() -> bool {
+    true
+}
+
+fn default_local_model_enabled() -> bool {
+    true
+}
+
+fn default_fallback_enabled() -> bool {
     true
 }
 
@@ -1218,6 +1232,8 @@ pub fn get_default_settings() -> AppSettings {
         custom_filler_words: None,
         chinese_script: default_chinese_script(),
         listen_mode: ListenMode::default(),
+        local_model_enabled: default_local_model_enabled(),
+        fallback_enabled: default_fallback_enabled(),
         cloud_engines: default_cloud_engines(),
         cloud_api_keys: default_cloud_api_keys(),
         transcribe_accelerator: TranscribeAcceleratorSetting::default(),

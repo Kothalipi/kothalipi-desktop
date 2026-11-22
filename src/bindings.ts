@@ -125,6 +125,22 @@ async changeVoiceSnippetsSetting(snippets: VoiceSnippet[]) : Promise<Result<null
     else return { status: "error", error: e  as any };
 }
 },
+async changeLocalModelEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_local_model_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeFallbackEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_fallback_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async startMeetingRecording() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("start_meeting_recording") };
@@ -1338,7 +1354,7 @@ chinese_script?: ChineseScript;
 /**
  * Kothalipi: offline model or cloud engines.
  */
-listen_mode?: ListenMode; 
+listen_mode?: ListenMode; local_model_enabled?: boolean; fallback_enabled?: boolean; 
 /**
  * Kothalipi: cloud engines, tried in order.
  */

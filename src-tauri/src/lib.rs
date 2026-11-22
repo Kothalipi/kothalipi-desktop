@@ -786,6 +786,8 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_app_aware_tone_setting,
             shortcut::change_vibe_coding_mode_setting,
             shortcut::change_voice_snippets_setting,
+            shortcut::change_local_model_enabled_setting,
+            shortcut::change_fallback_enabled_setting,
             meeting_notes::start_meeting_recording,
             meeting_notes::cancel_meeting_recording,
             meeting_notes::stop_and_summarize_meeting,
